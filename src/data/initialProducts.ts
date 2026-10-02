@@ -18,6 +18,7 @@ export const INITIAL_STORE_SETTINGS: StoreSettings = {
   telegramProformaChatId: '',
   telegramAccessChatId: '',
   telegramNotificationsEnabled: true,
+  underConstruction: false,
 };
 
 export const INITIAL_PRODUCTS: Product[] = [

@@ -1128,6 +1128,35 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </button>
 
+            {/* Under Construction Mode Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onUpdateSettings) {
+                  const updatedValue = !storeSettings.underConstruction;
+                  onUpdateSettings({
+                    ...storeSettings,
+                    underConstruction: updatedValue,
+                  });
+                }
+              }}
+              className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs ${
+                storeSettings.underConstruction
+                  ? 'bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border-amber-800/80'
+                  : 'bg-slate-800 hover:bg-slate-750 text-slate-300 border-slate-700'
+              }`}
+              title={
+                storeSettings.underConstruction
+                  ? "Le site est sous construction (Masqué pour le public)"
+                  : "Le site est ouvert au public"
+              }
+            >
+              <Wrench className="w-3.5 h-3.5 text-amber-400" />
+              <span>
+                {storeSettings.underConstruction ? 'Site: Sous Construction 🚧' : 'Site: En Ligne 🟢'}
+              </span>
+            </button>
+
             {/* Back to Store button */}
             <button
               type="button"

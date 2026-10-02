@@ -94,6 +94,7 @@ export interface StoreSettings {
   telegramProformaChatId?: string;
   telegramAccessChatId?: string;
   telegramNotificationsEnabled?: boolean;
+  underConstruction?: boolean;
 }
 
 export interface ManagerPermissions {
