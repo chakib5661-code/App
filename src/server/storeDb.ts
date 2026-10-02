@@ -185,7 +185,7 @@ export function loadDatabase(): ServerDatabase {
           customerApplications: Array.isArray(parsed.customerApplications) ? parsed.customerApplications : [],
           customerUsers: Array.isArray(parsed.customerUsers) ? parsed.customerUsers : [],
           adBanners: Array.isArray(parsed.adBanners) ? parsed.adBanners : [],
-          storeSettings: parsed.storeSettings || INITIAL_STORE_SETTINGS,
+          storeSettings: { ...(parsed.storeSettings || INITIAL_STORE_SETTINGS), underConstruction: true },
           adminUsers: Array.isArray(parsed.adminUsers) && parsed.adminUsers.length > 0 ? parsed.adminUsers : defaultAdmins,
           lastUpdated: parsed.lastUpdated || new Date().toISOString(),
         };
@@ -215,6 +215,9 @@ export async function loadDatabaseAsync(forceRefresh = false): Promise<ServerDat
           remoteDb.orders.sort(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
           );
+        }
+        if (remoteDb.storeSettings) {
+          remoteDb.storeSettings.underConstruction = true;
         }
         cachedDb = remoteDb;
         lastSupabaseFetchTime = now;
