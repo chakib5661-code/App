@@ -84,7 +84,7 @@ import {
   updateSettingsOnServer,
 } from './utils/api';
 import { playOrderNotificationSound, playAccessNotificationSound } from './utils/audioAlert';
-import { idbSaveProducts, idbGetProducts, idbSaveOfflineOrders, idbGetOfflineOrders } from './utils/indexedDb';
+import { idbSaveProducts, idbGetProducts, idbSaveOfflineOrders, idbGetOfflineOrders, clearAllClientCaches } from './utils/indexedDb';
 import { prefetchProductImages, getCachedImagesCount } from './utils/imageCache';
 import { subscribeToSupabaseRealtime, triggerAutoSyncToSupabase } from './utils/supabaseClient';
 
@@ -237,6 +237,49 @@ const cacheBannersLocally = (banners: AdBanner[]): void => {
 
 export default function App() {
   // 1. Core State
+  const [isResettingCache, setIsResettingCache] = useState(false);
+
+  // Global Forced Cache Reset Listener
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('reset-cache') === 'true' || params.get('clear-cache') === 'true') {
+      setIsResettingCache(true);
+      const executeReset = async () => {
+        try {
+          await clearAllClientCaches();
+          // Short delay to let everything clear out smoothly
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        } catch (e) {
+          console.error(e);
+        } finally {
+          // Redirect to a clean base URL without query parameters to reload fresh
+          window.location.href = window.location.origin + window.location.pathname;
+        }
+      };
+      executeReset();
+    }
+  }, []);
+
+  if (isResettingCache) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 selection:bg-amber-500 font-sans relative overflow-hidden">
+        <div className="absolute top-1/4 -left-32 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="text-center space-y-6 max-w-md relative z-10 animate-pulse">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto shadow-lg border border-amber-500/30">
+            <RotateCcw className="w-8 h-8 text-amber-400 animate-spin" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl sm:text-2xl font-black text-white">Réinitialisation du cache...</h1>
+            <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
+              Wiping offline caches, IndexedDB stores, and sessions for a complete system refresh. Please wait a moment...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);

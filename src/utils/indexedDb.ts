@@ -200,3 +200,43 @@ export async function idbGetOfflineOrders(): Promise<PreOrder[]> {
     return [];
   }
 }
+
+/**
+ * Fully reset and delete all client-side caches (IndexedDB, CacheStorage, localStorage, service workers)
+ */
+export async function clearAllClientCaches(): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  // 1. Wipe localStorage and sessionStorage
+  try {
+    localStorage.clear();
+    sessionStorage.clear();
+  } catch {}
+
+  // 2. Wipe window.caches (CacheStorage)
+  if ('caches' in window) {
+    try {
+      const keys = await window.caches.keys();
+      await Promise.all(keys.map((key) => window.caches.delete(key)));
+    } catch {}
+  }
+
+  // 3. Delete IndexedDB database
+  try {
+    dbPromise = null;
+    await new Promise<void>((resolve, reject) => {
+      const req = window.indexedDB.deleteDatabase(DB_NAME);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+      req.onblocked = () => resolve(); // continue even if blocked
+    });
+  } catch {}
+
+  // 4. Unregister all service workers
+  if ('serviceWorker' in navigator) {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((reg) => reg.unregister()));
+    } catch {}
+  }
+}

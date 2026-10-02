@@ -1128,6 +1128,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </button>
 
+            {/* Reset Cache Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm("Êtes-vous sûr de vouloir vider le cache complet du navigateur ? Cela réinitialisera l'application et rafraîchira la page.")) {
+                  window.location.search = '?reset-cache=true';
+                }
+              }}
+              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer animate-pulse-once"
+              title="Vider les caches hors-ligne et réinitialiser l'application"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden md:inline">Vider Cache</span>
+            </button>
+
             {/* Under Construction Mode Toggle */}
             <button
               type="button"
