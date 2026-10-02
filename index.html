@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tulip Fragrance Company - Raw Materials &amp; Pre-Order</title>
+    <meta name="description" content="Plateforme officielle de Tulip Fragrance Company pour la précommande de matières premières en Algérie (Extraits et Flacons), avec synchronisation Excel POS et génération de bon de commande PDF." />
+    <meta property="og:title" content="Tulip Fragrance Company - Raw Materials &amp; Pre-Order" />
+    <meta property="og:description" content="Plateforme officielle de Tulip Fragrance Company pour la précommande de matières premières en Algérie (Extraits et Flacons), avec synchronisation Excel POS et génération de bon de commande PDF." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Tulip" />
+    <link rel="icon" type="image/svg+xml" href="/tulip-logo.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="preload" href="/tulip-logo.svg" as="image" type="image/svg+xml" />
+    <script>
+      // Suppress benign [vite] websocket / dev notices when running inside preview iframe
+      (function() {
+        var isViteNotice = function(args) {
+          try {
+            var msg = args.map(function(a) {
+              if (typeof a === 'string') return a;
+              if (a && a.message) return a.message;
+              return String(a || '');
+            }).join(' ');
+            return msg.includes('[vite]') || msg.includes('WebSocket') || msg.includes('vite-plugin-pwa');
+          } catch(e) {
+            return false;
+          }
+        };
+
+        var origError = console.error;
+        console.error = function() {
+          var args = Array.prototype.slice.call(arguments);
+          if (isViteNotice(args)) return;
+          return origError.apply(console, args);
+        };
+
+        var origWarn = console.warn;
+        console.warn = function() {
+          var args = Array.prototype.slice.call(arguments);
+          if (isViteNotice(args)) return;
+          return origWarn.apply(console, args);
+        };
+
+        var origLog = console.log;
+        console.log = function() {
+          var args = Array.prototype.slice.call(arguments);
+          if (isViteNotice(args)) return;
+          return origLog.apply(console, args);
+        };
+
+        window.addEventListener('error', function(e) {
+          if (e && e.message && (e.message.includes('[vite]') || e.message.includes('WebSocket'))) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = e && e.reason;
+          var msg = String((reason && (reason.message || reason)) || '');
+          if (msg.includes('[vite]') || msg.includes('WebSocket')) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        }, true);
+
+        // Early recovery if a new deployment removed old chunks while user is browsing
+        window.addEventListener('vite:preloadError', function(e) {
+          var now = Date.now();
+          var last = Number(sessionStorage.getItem('tulip_last_pwa_reload') || 0);
+          if (now - last > 12000) {
+            sessionStorage.setItem('tulip_last_pwa_reload', String(now));
+            window.location.reload();
+          }
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,8 @@
+{
+  "name": " app2",
+  "description": "Plateforme officielle de Tulip Fragrance Company pour la précommande de matières premières en Algérie (Extraits et Flacons), avec génération de bon PDF et Studio Visuel IA pour les Extraits.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

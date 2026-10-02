@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --color-tulip-50: #fdf2f8;
+  --color-tulip-100: #fce7f3;
+  --color-tulip-200: #fbcfe8;
+  --color-tulip-300: #f9a8d4;
+  --color-tulip-400: #f472b6;
+  --color-tulip-500: #ec4899;
+  --color-tulip-600: #db2777;
+  --color-tulip-700: #be185d;
+  --color-tulip-800: #9f0e4e;
+  --color-tulip-900: #880e4f;
+  --color-tulip-950: #500428;
+}
+
+:root {
+  --primary-tulip: #9f0e4e;
+  --primary-dark: #70083b;
+  --primary-vivid: #c2185b;
+}
+
+::selection {
+  background-color: #9f0e4e;
+  color: #ffffff;
+}
+
+/* Smooth luxury font and scrolling */
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
