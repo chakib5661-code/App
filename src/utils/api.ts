@@ -10,7 +10,7 @@ import {
 } from '../types';
 import { idbSaveSyncSnapshot, idbGetSyncSnapshot, idbSaveProducts } from './indexedDb';
 import { prefetchProductImages } from './imageCache';
-import { directClientFetchFromSupabase } from './supabaseClient';
+import { directClientFetchFromSupabase, getClientSupabaseCredentials } from './supabaseClient';
 
 export interface SyncDataResponse {
   status: string;
@@ -866,64 +866,8 @@ export interface ServerEventData {
 export function subscribeToServerEvents(
   onEvent: (event: ServerEventData) => void
 ): () => void {
-  if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
-    return () => {};
-  }
-
-  let eventSource: EventSource | null = null;
-  let isClosed = false;
-  let retryTimer: any = null;
-  let retryCount = 0;
-
-  function connect() {
-    if (isClosed) return;
-
-    try {
-      eventSource = new EventSource('/api/events');
-
-      eventSource.onopen = () => {
-        retryCount = 0;
-      };
-
-      eventSource.onmessage = (messageEvent) => {
-        try {
-          if (!messageEvent.data || messageEvent.data.startsWith(':')) return;
-          const parsed = JSON.parse(messageEvent.data);
-          if (parsed && parsed.type) {
-            onEvent(parsed);
-          }
-        } catch (e) {
-          console.debug('[SSE] Message parsing skipped:', e);
-        }
-      };
-
-      eventSource.onerror = () => {
-        if (eventSource) {
-          eventSource.close();
-          eventSource = null;
-        }
-        if (!isClosed) {
-          // Reconnect with backoff (capped at 10s)
-          const delay = Math.min(1000 * Math.pow(1.5, retryCount), 10000);
-          retryCount++;
-          retryTimer = setTimeout(connect, delay);
-        }
-      };
-    } catch (e) {
-      console.warn('[SSE] EventSource initialisation failed:', e);
-    }
-  }
-
-  connect();
-
-  return () => {
-    isClosed = true;
-    if (retryTimer) clearTimeout(retryTimer);
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-  };
+  console.log('[SSE] Real-time synchronization is disabled per configuration.');
+  return () => {};
 }
 
 export async function syncAdminUsersOnServer(users: AdminUser[]): Promise<boolean> {

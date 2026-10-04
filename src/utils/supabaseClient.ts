@@ -182,42 +182,6 @@ export async function directClientSaveToSupabase(dbSnapshot: any): Promise<{
 export function subscribeToSupabaseRealtime(
   onUpdate: (updatedData: any) => void
 ): () => void {
-  const client = getClientSupabase();
-  if (!client) {
-    return () => {};
-  }
-
-  try {
-    const channel = client
-      .channel('tulip_realtime_store_channel')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tulip_store_state',
-          filter: 'key=eq.main_state',
-        },
-        (payload: any) => {
-          if (payload?.new && payload.new.data) {
-            console.log('[Supabase Realtime] Received live update from cloud:', payload.new.updated_at);
-            onUpdate(payload.new.data);
-          }
-        }
-      )
-      .subscribe((status: string) => {
-        console.log('[Supabase Realtime] Channel subscription status:', status);
-      });
-
-    return () => {
-      try {
-        client.removeChannel(channel);
-      } catch (err) {
-        console.warn('[Supabase Realtime] Error removing channel:', err);
-      }
-    };
-  } catch (err) {
-    console.warn('[Supabase Realtime] Error subscribing to changes:', err);
-    return () => {};
-  }
+  console.log('[Supabase Realtime] Real-time synchronization is disabled per configuration.');
+  return () => {};
 }
