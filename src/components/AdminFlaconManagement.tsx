@@ -20,6 +20,7 @@ import { Product } from '../types';
 import { formatDZD } from '../utils/pdfGenerator';
 import { compressImage } from '../utils/imageCompressor';
 import { IrreversibleConfirmModal } from './IrreversibleConfirmModal';
+import { uploadMediaToServer } from '../utils/api';
 
 interface AdminFlaconManagementProps {
   products: Product[];
@@ -150,7 +151,13 @@ export const AdminFlaconManagement: React.FC<AdminFlaconManagementProps> = ({
         quality: 0.82,
         mimeType: 'image/webp',
       });
-      setImageUrl(compressed);
+      
+      const uploadRes = await uploadMediaToServer(compressed, file.name);
+      if (uploadRes.success && uploadRes.url) {
+        setImageUrl(uploadRes.url);
+      } else {
+        setImageUrl(compressed);
+      }
     } catch (err) {
       console.warn('Compression error:', err);
       setFormError("Échec de l'optimisation de l'image.");

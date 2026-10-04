@@ -21,6 +21,7 @@ import { Product } from '../types';
 import { formatDZD } from '../utils/pdfGenerator';
 import { compressImage } from '../utils/imageCompressor';
 import { IrreversibleConfirmModal } from './IrreversibleConfirmModal';
+import { uploadMediaToServer } from '../utils/api';
 
 interface AdminAccessoryManagementProps {
   products: Product[];
@@ -171,12 +172,18 @@ export const AdminAccessoryManagement: React.FC<AdminAccessoryManagementProps> =
       setIsCompressingImage(true);
       setFormError(null);
       const compressed = await compressImage(file, {
-        maxWidth: 800,
-        maxHeight: 800,
-        quality: 0.82,
+        maxWidth: 500,
+        maxHeight: 500,
+        quality: 0.70,
         mimeType: 'image/webp',
       });
-      setImageUrl(compressed);
+      
+      const uploadRes = await uploadMediaToServer(compressed, file.name);
+      if (uploadRes.success && uploadRes.url) {
+        setImageUrl(uploadRes.url);
+      } else {
+        setImageUrl(compressed);
+      }
     } catch (err) {
       console.warn('Compression error:', err);
       setFormError("Échec de l'optimisation de l'image.");

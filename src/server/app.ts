@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import * as storeDb from "./storeDb";
 import * as supabaseDb from "./supabaseDb";
+import { put } from "@vercel/blob";
 
 dotenv.config();
 
@@ -1452,6 +1453,149 @@ async function sendTelegramAccessRequestNotification(applicant: any) {
     }
   });
 
+
+// Vercel Blob Storage - Media Upload, Import & Export
+app.post("/api/media/upload", async (req, res) => {
+  try {
+    const { base64, filename = "upload.webp" } = req.body;
+    if (!base64 || typeof base64 !== 'string') {
+      return res.status(400).json({ error: "Données base64 manquantes." });
+    }
+
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
+      console.warn("[Media Upload] BLOB_READ_WRITE_TOKEN is missing. Returning raw base64 dataUrl as fallback.");
+      return res.json({
+        success: true,
+        url: base64,
+        fallback: true,
+        message: "Stocké localement car BLOB_READ_WRITE_TOKEN n'est pas configuré."
+      });
+    }
+
+    const matches = base64.match(/^data:([A-Za-z0-9\-+\/]+);base64,(.+)$/);
+    let buffer: Buffer;
+    let contentType = "image/webp";
+
+    if (matches && matches.length === 3) {
+      contentType = matches[1];
+      buffer = Buffer.from(matches[2], 'base64');
+    } else {
+      buffer = Buffer.from(base64, 'base64');
+    }
+
+    let finalFilename = filename;
+
+    // Server-side Image Optimization & Compression via Sharp to reduce transfer sizes/egress
+    if (contentType.startsWith("image/")) {
+      try {
+        const sharp = require('sharp');
+        const optimizedBuffer = await sharp(buffer)
+          .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 65, effort: 4 })
+          .toBuffer();
+        
+        buffer = optimizedBuffer;
+        contentType = "image/webp";
+        // Ensure web-optimized WebP extension
+        if (!finalFilename.endsWith(".webp")) {
+          const baseName = finalFilename.replace(/\.[^/.]+$/, "");
+          finalFilename = `${baseName}.webp`;
+        }
+      } catch (sharpError) {
+        console.warn("[Media Upload] Sharp compression notice (using raw buffer instead):", sharpError);
+      }
+    }
+
+    const uniqueFilename = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${finalFilename}`;
+
+    const blob = await put(`media/${uniqueFilename}`, buffer, {
+      access: 'public',
+      contentType,
+      token,
+    });
+
+    return res.json({
+      success: true,
+      url: blob.url,
+      message: "Image mise en ligne avec succès sur Vercel Blob !"
+    });
+  } catch (err: any) {
+    console.error("[Media Upload] Error uploading to Vercel Blob:", err);
+    return res.status(500).json({ error: "Erreur lors de la mise en ligne du fichier: " + (err.message || String(err)) });
+  }
+});
+
+app.post("/api/backup/export-blob", async (req, res) => {
+  try {
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
+      return res.status(400).json({ error: "Vercel Blob n'est pas configuré. BLOB_READ_WRITE_TOKEN est requis." });
+    }
+
+    const db = await storeDb.loadDatabaseAsync(true);
+    const dbString = JSON.stringify(db, null, 2);
+    const buffer = Buffer.from(dbString, 'utf-8');
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `backup-tulip-${dateStr}.json`;
+
+    const blob = await put(`backups/${filename}`, buffer, {
+      access: 'public',
+      contentType: 'application/json',
+      token,
+    });
+
+    res.json({
+      success: true,
+      url: blob.url,
+      filename,
+      message: "Sauvegarde de la base de données exportée avec succès sur Vercel Blob !"
+    });
+  } catch (err: any) {
+    console.error("[Backup Export] Vercel Blob export error:", err);
+    res.status(500).json({ error: "Erreur lors de l'exportation: " + (err.message || String(err)) });
+  }
+});
+
+app.post("/api/backup/import-blob", async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+      return res.status(400).json({ error: "URL de sauvegarde Vercel Blob requise." });
+    }
+
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      return res.status(400).json({ error: "Impossible de récupérer le fichier de sauvegarde à l'adresse indiquée." });
+    }
+
+    const backup = await resp.json();
+    if (!backup || typeof backup !== 'object' || !Array.isArray(backup.products)) {
+      return res.status(400).json({ error: "Le fichier de sauvegarde récupéré n'est pas un fichier de sauvegarde Tulip valide." });
+    }
+
+    const restored = await storeDb.restoreDatabase(backup);
+    broadcastServerEvent("database:restored", { lastUpdated: restored.lastUpdated });
+
+    res.json({
+      success: true,
+      message: "Base de données importée et restaurée avec succès depuis Vercel Blob !",
+      data: {
+        products: restored.products,
+        orders: restored.orders,
+        customerApplications: restored.customerApplications,
+        customerUsers: restored.customerUsers,
+        storeSettings: restored.storeSettings,
+        adBanners: restored.adBanners,
+        lastUpdated: restored.lastUpdated,
+      }
+    });
+  } catch (err: any) {
+    console.error("[Backup Import] Vercel Blob import error:", err);
+    res.status(500).json({ error: "Erreur lors de l'importation: " + (err.message || String(err)) });
+  }
+});
 
 // Fallback for root API endpoint
 app.get("/api", (_req, res) => {

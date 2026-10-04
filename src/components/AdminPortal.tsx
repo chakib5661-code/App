@@ -55,7 +55,7 @@ import { AdminAnalytics } from './AdminAnalytics';
 import { AdminTelegramModal } from './AdminTelegramModal';
 import { IrreversibleConfirmModal } from './IrreversibleConfirmModal';
 import { TulipLogo } from './TulipLogo';
-import { checkSupabaseStatus, syncDatabaseToSupabase, fetchSyncData, syncAdminUsersOnServer } from '../utils/api';
+import { checkSupabaseStatus, syncDatabaseToSupabase, exportDatabaseToBlobOnServer, importDatabaseFromBlobOnServer, fetchSyncData, syncAdminUsersOnServer } from '../utils/api';
 import {
   getClientSupabaseCredentials,
   directClientTestSupabase,
@@ -229,6 +229,62 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     exportDate?: string;
   } | null>(null);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
+
+  // Vercel Blob Storage - Backup & Media Export/Import States
+  const [blobExporting, setBlobExporting] = useState(false);
+  const [blobExportResult, setBlobExportResult] = useState<{ url: string; filename: string } | null>(null);
+  const [blobExportError, setBlobExportError] = useState<string | null>(null);
+  const [blobImportUrl, setBlobImportUrl] = useState('');
+  const [blobImporting, setBlobImporting] = useState(false);
+  const [blobImportMsg, setBlobImportMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleExportToBlob = async () => {
+    setBlobExporting(true);
+    setBlobExportError(null);
+    setBlobExportResult(null);
+    try {
+      const res = await exportDatabaseToBlobOnServer();
+      if (res.success && res.url) {
+        setBlobExportResult({ url: res.url, filename: res.filename || 'backup.json' });
+      } else {
+        setBlobExportError(res.error || "Échec de l'exportation vers Vercel Blob.");
+      }
+    } catch (err: any) {
+      setBlobExportError(err?.message || "Erreur lors de l'exportation.");
+    } finally {
+      setBlobExporting(false);
+    }
+  };
+
+  const handleImportFromBlob = async () => {
+    if (!blobImportUrl.trim()) {
+      setBlobImportMsg({ type: 'error', text: 'Veuillez saisir une URL de sauvegarde Vercel Blob.' });
+      return;
+    }
+    setBlobImporting(true);
+    setBlobImportMsg(null);
+    try {
+      const res = await importDatabaseFromBlobOnServer(blobImportUrl.trim());
+      if (res.success) {
+        setBlobImportMsg({
+          type: 'success',
+          text: res.message || 'La base de données a été restaurée avec succès depuis Vercel Blob !',
+        });
+        if (typeof onUpdateProducts === 'function' && res.data?.products) {
+          onUpdateProducts(res.data.products);
+        }
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else {
+        setBlobImportMsg({ type: 'error', text: res.error || "Échec de l'importation." });
+      }
+    } catch (err: any) {
+      setBlobImportMsg({ type: 'error', text: err?.message || "Erreur lors de l'importation." });
+    } finally {
+      setBlobImporting(false);
+    }
+  };
 
   // Supabase Cloud Storage Status State
   const [supabaseStatus, setSupabaseStatus] = useState<{
@@ -415,6 +471,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       }
     };
     syncUsersWithBackend();
+    refreshSupabaseStatus();
   }, []);
 
   // Persist session
@@ -1126,50 +1183,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <Send className="w-3.5 h-3.5 text-sky-400" />
               <span className="hidden sm:inline">Bot Telegram</span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            </button>
-
-            {/* Reset Cache Button */}
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm("Êtes-vous sûr de vouloir vider le cache complet du navigateur ? Cela réinitialisera l'application et rafraîchira la page.")) {
-                  window.location.search = '?reset-cache=true';
-                }
-              }}
-              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer animate-pulse-once"
-              title="Vider les caches hors-ligne et réinitialiser l'application"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden md:inline">Vider Cache</span>
-            </button>
-
-            {/* Under Construction Mode Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                if (onUpdateSettings) {
-                  const updatedValue = !storeSettings.underConstruction;
-                  onUpdateSettings({
-                    ...storeSettings,
-                    underConstruction: updatedValue,
-                  });
-                }
-              }}
-              className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs ${
-                storeSettings.underConstruction
-                  ? 'bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border-amber-800/80'
-                  : 'bg-slate-800 hover:bg-slate-750 text-slate-300 border-slate-700'
-              }`}
-              title={
-                storeSettings.underConstruction
-                  ? "Le site est sous construction (Masqué pour le public)"
-                  : "Le site est ouvert au public"
-              }
-            >
-              <Wrench className="w-3.5 h-3.5 text-amber-400" />
-              <span>
-                {storeSettings.underConstruction ? 'Site: Sous Construction 🚧' : 'Site: En Ligne 🟢'}
-              </span>
             </button>
 
             {/* Back to Store button */}
@@ -2204,13 +2217,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-bold text-white">Stockage Cloud Supabase (Vercel & Multi-Appareils)</h4>
-                            
-                            
-                            
+                            <h4 className="text-sm font-bold text-white">Stockage Cloud Supabase (Données & Logins)</h4>
                           </div>
                           <p className="text-xs text-slate-400 mt-0.5">
-                            Stockage persistant universel pour hébergement Vercel sans perte de données aux redémarrages.
+                            Stockage persistant pour les comptes, mots de passe, commandes, sécurité et produits.
                           </p>
                         </div>
                       </div>
@@ -2290,6 +2300,101 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                           Fichier SQL inclus : <span className="font-mono text-emerald-400">supabase-schema.sql</span>
                         </div>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* VERCEL BLOB STORAGE - CLOUD BACKUPS & MEDIA EXPORT / IMPORT */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900/90 via-rose-950/20 to-slate-900/90 border border-rose-500/30 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+                          <Database className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-bold text-white">Stockage Cloud Vercel Blob (Sauvegardes & Médias)</h4>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Sauvegardes centralisées et hébergement optimisé des médias pour Tulip Fragrance Company.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleExportToBlob}
+                          disabled={blobExporting}
+                          className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:bg-rose-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition cursor-pointer"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${blobExporting ? 'animate-spin' : ''}`} />
+                          <span>{blobExporting ? 'Sauvegarde en cours...' : 'Créer Sauvegarde Cloud'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {blobExportResult && (
+                      <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs space-y-2">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>Sauvegarde créée avec succès sur Vercel Blob !</span>
+                        </div>
+                        <div className="bg-slate-950 p-2 rounded border border-slate-800 font-mono text-[10px] break-all select-all flex items-center justify-between">
+                          <span>{blobExportResult.url}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          Conservez cette URL pour restaurer ou copier l'état du site sur un autre appareil à tout moment.
+                        </p>
+                      </div>
+                    )}
+
+                    {blobExportError && (
+                      <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-rose-400" />
+                        <span>{blobExportError}</span>
+                      </div>
+                    )}
+
+                    {/* Vercel Blob Import Box */}
+                    <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-850 space-y-3">
+                      <label className="block text-xs font-bold text-slate-300">
+                        Restaurer / Importer une Sauvegarde Cloud Tulip
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="url"
+                          value={blobImportUrl}
+                          onChange={(e) => setBlobImportUrl(e.target.value)}
+                          placeholder="Collez l'URL Vercel Blob de votre fichier de sauvegarde .json"
+                          className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleImportFromBlob}
+                          disabled={blobImporting}
+                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                        >
+                          <HardDriveDownload className={`w-3.5 h-3.5 text-rose-400 ${blobImporting ? 'animate-bounce' : ''}`} />
+                          <span>{blobImporting ? 'Restauration...' : 'Restaurer'}</span>
+                        </button>
+                      </div>
+
+                      {blobImportMsg && (
+                        <div
+                          className={`p-3 rounded-xl text-xs flex items-center gap-2 animate-in fade-in ${
+                            blobImportMsg.type === 'success'
+                              ? 'bg-emerald-950/70 border border-emerald-500/50 text-emerald-300'
+                              : 'bg-rose-950/70 border border-rose-800 text-rose-300'
+                          }`}
+                        >
+                          {blobImportMsg.type === 'success' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-rose-400" />
+                          )}
+                          <span>{blobImportMsg.text}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 

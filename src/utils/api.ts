@@ -970,5 +970,61 @@ export async function syncAdminUsersOnServer(users: AdminUser[]): Promise<boolea
   }
 }
 
+// Vercel Blob - Media & Backup upload/import/export client endpoints
+export async function uploadMediaToServer(
+  base64: string,
+  filename?: string
+): Promise<{ success: boolean; url?: string; message?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/media/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64, filename }),
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error('[API] uploadMediaToServer error:', err);
+    return { success: false, error: err.message || 'Erreur réseau lors de l\'envoi de l\'image.' };
+  }
+}
+
+export async function exportDatabaseToBlobOnServer(): Promise<{
+  success: boolean;
+  url?: string;
+  filename?: string;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/backup/export-blob', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error('[API] exportDatabaseToBlobOnServer error:', err);
+    return { success: false, error: err.message || 'Erreur réseau lors de l\'exportation de la sauvegarde.' };
+  }
+}
+
+export async function importDatabaseFromBlobOnServer(
+  url: string
+): Promise<{ success: boolean; message?: string; data?: any; error?: string }> {
+  try {
+    const res = await fetch('/api/backup/import-blob', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error('[API] importDatabaseFromBlobOnServer error:', err);
+    return { success: false, error: err.message || 'Erreur réseau lors de l\'importation de la sauvegarde.' };
+  }
+}
+
 
 

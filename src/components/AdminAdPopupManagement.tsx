@@ -23,6 +23,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { AdBanner, Product } from '../types';
 import { compressImage } from '../utils/imageCompressor';
+import { uploadMediaToServer } from '../utils/api';
 
 interface AdminAdPopupManagementProps {
   banners: AdBanner[];
@@ -168,12 +169,18 @@ export const AdminAdPopupManagement: React.FC<AdminAdPopupManagementProps> = ({
     try {
       setIsCompressingImage(true);
       const compressed = await compressImage(file, {
-        maxWidth: 1080,
-        maxHeight: 1080,
-        quality: 0.82,
+        maxWidth: 800,
+        maxHeight: 800,
+        quality: 0.70,
         mimeType: 'image/webp',
       });
-      setImageUrl(compressed);
+      
+      const uploadRes = await uploadMediaToServer(compressed, file.name);
+      if (uploadRes.success && uploadRes.url) {
+        setImageUrl(uploadRes.url);
+      } else {
+        setImageUrl(compressed);
+      }
     } catch (err) {
       console.warn('Banner compression error:', err);
       setUploadError("Erreur lors de l'optimisation de l'image.");

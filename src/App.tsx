@@ -24,9 +24,6 @@ import {
   Globe,
   RotateCcw,
   X,
-  PhoneCall,
-  MessageSquare,
-  ShieldAlert,
 } from 'lucide-react';
 import { Product, ProductFamily, CartItem, CustomerDetails, PreOrder, StoreSettings, CustomerApplication, CustomerUser, CustomerAccountStatus, AdBanner, SavedPreorder } from './types';
 import { INITIAL_PRODUCTS, INITIAL_STORE_SETTINGS } from './data/initialProducts';
@@ -50,8 +47,6 @@ import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
 import { InterfaceChoiceModal } from './components/InterfaceChoiceModal';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
 import { LanguageSelectionModal } from './components/LanguageSelectionModal';
-import { PwaInstallModal } from './components/PwaInstallModal';
-import { PwaInstallAdviceBanner } from './components/PwaInstallAdviceBanner';
 import { AppLanguage } from './translations';
 import { downloadOrderPDF, formatDZD } from './utils/pdfGenerator';
 import { trackCustomEvent, applyServerAnalyticsConfig } from './utils/analytics';
@@ -81,10 +76,9 @@ import {
   createSingleProductOnServer,
   saveSingleProductOnServer,
   bulkDeleteOrdersOnServer,
-  updateSettingsOnServer,
 } from './utils/api';
 import { playOrderNotificationSound, playAccessNotificationSound } from './utils/audioAlert';
-import { idbSaveProducts, idbGetProducts, idbSaveOfflineOrders, idbGetOfflineOrders, clearAllClientCaches } from './utils/indexedDb';
+import { idbSaveProducts, idbGetProducts, idbSaveOfflineOrders, idbGetOfflineOrders } from './utils/indexedDb';
 import { prefetchProductImages, getCachedImagesCount } from './utils/imageCache';
 import { subscribeToSupabaseRealtime, triggerAutoSyncToSupabase } from './utils/supabaseClient';
 
@@ -237,49 +231,6 @@ const cacheBannersLocally = (banners: AdBanner[]): void => {
 
 export default function App() {
   // 1. Core State
-  const [isResettingCache, setIsResettingCache] = useState(false);
-
-  // Global Forced Cache Reset Listener
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('reset-cache') === 'true' || params.get('clear-cache') === 'true') {
-      setIsResettingCache(true);
-      const executeReset = async () => {
-        try {
-          await clearAllClientCaches();
-          // Short delay to let everything clear out smoothly
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-        } catch (e) {
-          console.error(e);
-        } finally {
-          // Redirect to a clean base URL without query parameters to reload fresh
-          window.location.href = window.location.origin + window.location.pathname;
-        }
-      };
-      executeReset();
-    }
-  }, []);
-
-  if (isResettingCache) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 selection:bg-amber-500 font-sans relative overflow-hidden">
-        <div className="absolute top-1/4 -left-32 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="text-center space-y-6 max-w-md relative z-10 animate-pulse">
-          <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto shadow-lg border border-amber-500/30">
-            <RotateCcw className="w-8 h-8 text-amber-400 animate-spin" />
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-xl sm:text-2xl font-black text-white">Réinitialisation du cache...</h1>
-            <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
-              Wiping offline caches, IndexedDB stores, and sessions for a complete system refresh. Please wait a moment...
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
@@ -2474,117 +2425,8 @@ export default function App() {
         onPreviewAdBanner={handlePreviewAdBanner}
         onToggleAdPopupEnabled={handleToggleAdPopupEnabled}
         onRestoreAllData={handleRestoreAllData}
-        onUpdateSettings={(newSettings) => {
-          setStoreSettings(newSettings);
-          updateSettingsOnServer(newSettings).catch((err) =>
-            console.warn('[App] Failed to synchronize store settings with server:', err)
-          );
-        }}
+        onUpdateSettings={(newSettings) => setStoreSettings(newSettings)}
       />
-    );
-  }
-
-  // Under Construction view for public visitors
-  if (storeSettings.underConstruction && !localStorage.getItem('tulip_admin_session_v1')) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between p-4 sm:p-8 selection:bg-amber-500 selection:text-slate-950 font-sans relative overflow-hidden">
-        {/* Background Decorative Circles */}
-        <div className="absolute top-1/4 -left-32 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="max-w-2xl mx-auto my-auto text-center space-y-8 relative z-10 py-10">
-          {/* Logo */}
-          <div className="flex flex-col items-center justify-center gap-3">
-            <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-500 to-amber-600 text-slate-950 flex items-center justify-center shadow-2xl shadow-amber-500/20 animate-pulse">
-              <Wrench className="w-10 h-10 text-slate-950" />
-            </div>
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white mt-4 font-serif">
-              {storeSettings.storeName}
-            </h1>
-            <p className="text-amber-400 font-semibold text-xs uppercase tracking-widest max-w-md mx-auto">
-              {storeSettings.tagline}
-            </p>
-          </div>
-
-          {/* Construction Announcement Banner */}
-          <div className="p-6 bg-slate-900/80 border border-slate-800 rounded-3xl space-y-4 shadow-xl">
-            <h2 className="text-lg sm:text-xl font-bold text-amber-400 flex items-center justify-center gap-2">
-              🚧 Site en cours de maintenance
-            </h2>
-            <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-              Nous mettons à jour notre catalogue de parfumerie fine et de matières premières pour mieux vous servir. Le site sera de retour en ligne très prochainement !
-            </p>
-          </div>
-
-          {/* Contact Numbers & WhatsApp Dispatch */}
-          <div className="space-y-4">
-            <p className="text-slate-400 text-xs uppercase tracking-wider font-bold">
-              Besoin de nous contacter immédiatement ?
-            </p>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md mx-auto">
-              {/* Primary Phone */}
-              <a
-                href={`tel:${storeSettings.phone}`}
-                className="p-4 rounded-2xl bg-slate-900 border border-slate-800 hover:border-amber-500/40 transition flex items-center gap-3 text-left shadow-xs cursor-pointer group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-slate-950 transition">
-                  <Phone className="w-5 h-5 text-amber-400 group-hover:text-slate-950 transition" />
-                </div>
-                <div>
-                  <div className="text-[10px] text-slate-400 font-semibold uppercase">Téléphone</div>
-                  <div className="text-sm font-bold text-white group-hover:text-amber-400 transition">{storeSettings.phone}</div>
-                </div>
-              </a>
-
-              {/* Secondary Phone if available */}
-              {storeSettings.phoneSecondary && (
-                <a
-                  href={`tel:${storeSettings.phoneSecondary}`}
-                  className="p-4 rounded-2xl bg-slate-900 border border-slate-800 hover:border-amber-500/40 transition flex items-center gap-3 text-left shadow-xs cursor-pointer group"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-slate-950 transition">
-                    <PhoneCall className="w-5 h-5 text-amber-400 group-hover:text-slate-950 transition" />
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-slate-400 font-semibold uppercase">Téléphone 2</div>
-                    <div className="text-sm font-bold text-white group-hover:text-amber-400 transition">{storeSettings.phoneSecondary}</div>
-                  </div>
-                </a>
-              )}
-            </div>
-
-            {/* Direct WhatsApp Action Button */}
-            <a
-              href={`https://wa.me/${storeSettings.whatsappPhone}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 transition cursor-pointer"
-            >
-              <MessageSquare className="w-5 h-5 text-white animate-bounce" />
-              <span>Contactez-nous sur WhatsApp</span>
-            </a>
-          </div>
-        </div>
-
-        {/* Footer with Administration Portal secret entrance */}
-        <div className="max-w-7xl mx-auto w-full text-center py-4 border-t border-slate-900 flex flex-col sm:flex-row justify-between items-center gap-3 relative z-10 text-xs text-slate-500">
-          <div>
-            &copy; {new Date().getFullYear()} {storeSettings.storeName}. Tous droits réservés.
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setCurrentView('admin');
-              window.location.hash = 'admin';
-            }}
-            className="text-slate-500 hover:text-amber-400 font-semibold transition cursor-pointer flex items-center gap-1.5"
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
-            <span>Portail Administratif (B2B)</span>
-          </button>
-        </div>
-      </div>
     );
   }
 
@@ -3255,24 +3097,6 @@ export default function App() {
         }}
         isPricesVisible={isPricesVisible}
         lang={currentLang}
-        onOpenInstallGuide={() => {
-          setIsConfirmationOpen(false);
-          setIsPwaGuideOpen(true);
-        }}
-        deviceInfo={deviceInfo}
-      />
-
-      {/* Floating customer advisory banner: guides customers how to install PWA on their detected phone (No buttons in header/interface) */}
-      <PwaInstallAdviceBanner
-        lang={currentLang}
-        onOpenInstallGuide={() => setIsPwaGuideOpen(true)}
-        deviceInfo={deviceInfo}
-      />
-
-      {/* PWA Phone Installation Step-by-Step Guide Modal (Android Chrome, Samsung Internet, iOS Safari) */}
-      <PwaInstallModal
-        isOpen={isPwaGuideOpen}
-        onClose={() => setIsPwaGuideOpen(false)}
         deviceInfo={deviceInfo}
       />
 
