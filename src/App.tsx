@@ -78,8 +78,6 @@ import {
   bulkDeleteOrdersOnServer,
 } from './utils/api';
 import { playOrderNotificationSound, playAccessNotificationSound } from './utils/audioAlert';
-import { idbSaveProducts, idbGetProducts, idbSaveOfflineOrders, idbGetOfflineOrders } from './utils/indexedDb';
-import { prefetchProductImages, getCachedImagesCount } from './utils/imageCache';
 import { subscribeToSupabaseRealtime, triggerAutoSyncToSupabase } from './utils/supabaseClient';
 
 const STORAGE_KEYS = {
@@ -194,76 +192,22 @@ const safeSetStorageItem = (key: string, value: string): void => {
 };
 
 const cacheProductsLocally = (products: Product[]): void => {
-  try {
-    // Strip large inline base64 images (>10KB) for the offline localStorage cache to prevent exceeding the browser 5MB quota
-    const sanitized = products.map((p) => {
-      if (p.imageUrl && p.imageUrl.startsWith('data:') && p.imageUrl.length > 10000) {
-        return { ...p, imageUrl: '' };
-      }
-      return p;
-    });
-    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(sanitized));
-  } catch (err: any) {
-    console.warn('[Storage] Quota reached when caching products. Clearing products local cache to prevent crashes:', err?.message || err);
-    try {
-      // If even sanitized fails, remove the key so it doesn't leave corrupted or oversized data
-      localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
-    } catch {}
-  }
+  // Completely disabled: do not save catalog data offline
 };
 
 const cacheBannersLocally = (banners: AdBanner[]): void => {
-  try {
-    const sanitized = banners.map((b) => {
-      if (b.imageUrl && b.imageUrl.startsWith('data:') && b.imageUrl.length > 10000) {
-        return { ...b, imageUrl: '' };
-      }
-      return b;
-    });
-    localStorage.setItem(STORAGE_KEYS.AD_BANNERS, JSON.stringify(sanitized));
-  } catch (err: any) {
-    console.warn('[Storage] Quota notice when caching banners:', err?.message || err);
-  }
+  // Completely disabled: do not save banner data offline
 };
 
 // Safe client session initialization without purging user database
 // (Session purging block removed to preserve customer sessions upon refresh)
 
 export default function App() {
-  // 1. Core State
-  const [products, setProducts] = useState<Product[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch {
-      // fallback
-    }
-    return INITIAL_PRODUCTS;
-  });
+  // 1. Core State (Always starts empty and fetches fresh from the live database)
+  const [products, setProducts] = useState<Product[]>([]);
 
-  // Rapid Store Access: Shell mounts instantly, products hydrate from local cache or load smoothly
-  const [isCatalogLoading, setIsCatalogLoading] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return false;
-        }
-      }
-    } catch {}
-    if (INITIAL_PRODUCTS.length > 0) return false;
-    // If offline, do not stall on skeleton screen
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      return false;
-    }
-    return true;
-  });
+  // Rapid Store Access: Shell loads with sleek loading animation until fresh data is delivered
+  const [isCatalogLoading, setIsCatalogLoading] = useState<boolean>(true);
 
   useEffect(() => {
     // Ultra-fast safety fallback: reveal catalog shell within 800ms
@@ -273,22 +217,11 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Hydrate products & offline orders from IndexedDB on startup (unlimited PWA storage)
+  // Sync live catalog on startup
   useEffect(() => {
     let active = true;
-    idbGetProducts().then((idbProducts) => {
-      if (!active || !idbProducts || idbProducts.length === 0) return;
-      setProducts((prev) => {
-        if (prev.length === 0) return idbProducts;
-        return prev;
-      });
-      setIsCatalogLoading(false);
-      prefetchProductImages(idbProducts).then(() => {
-        if (active) getCachedImagesCount().then(setCachedImagesCount).catch(() => {});
-      }).catch(() => {});
-    }).catch(() => {});
 
-    // For new devices / empty cache: immediately trigger live sync from Supabase/Server
+    // Trigger live sync from Server/Supabase database authority on mount
     setIsSyncingStocks(true);
     fetchSyncData(3000).then((data) => {
       if (!active || !data) return;
@@ -337,16 +270,7 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
-  const [orders, setOrders] = useState<PreOrder[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.ORDERS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return loadOfflineOrdersQueue();
-  });
+  const [orders, setOrders] = useState<PreOrder[]>([]);
 
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
@@ -421,26 +345,8 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1);
 
   // 5. Customer Authentication & Application Management State
-  const [customerApplications, setCustomerApplications] = useState<CustomerApplication[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMER_APPLICATIONS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_CUSTOMER_APPLICATIONS;
-  });
-  const [customerUsers, setCustomerUsers] = useState<CustomerUser[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMER_USERS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [];
-  });
+  const [customerApplications, setCustomerApplications] = useState<CustomerApplication[]>([]);
+  const [customerUsers, setCustomerUsers] = useState<CustomerUser[]>([]);
 
   const [currentCustomer, setCurrentCustomer] = useState<CustomerUser | null>(() => {
     try {
@@ -470,21 +376,7 @@ export default function App() {
   const isPricesVisible = Boolean(currentCustomer && currentCustomer.status === 'approved');
 
   // 6. Advertising Popup State
-  const [adBanners, setAdBanners] = useState<AdBanner[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.AD_BANNERS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const clean = parsed.filter((b: any) => b && !b.id?.startsWith('ad-00'));
-          return clean;
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return [];
-  });
+  const [adBanners, setAdBanners] = useState<AdBanner[]>([]);
 
   const [isAdPopupEnabled, setIsAdPopupEnabled] = useState<boolean>(() => {
     try {
@@ -813,26 +705,7 @@ export default function App() {
   const isImagePrefetchedRef = useRef(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      cacheProductsLocally(products);
-      idbSaveProducts(products).catch(() => {});
-    }, 300);
-
-    // Prefetch product images into cacheStorage once on startup or when catalog is initially populated
-    if (products.length > 0 && !isImagePrefetchedRef.current) {
-      isImagePrefetchedRef.current = true;
-      const idleTimer = setTimeout(() => {
-        prefetchProductImages(products).then(() => {
-          getCachedImagesCount().then(setCachedImagesCount).catch(() => {});
-        }).catch(() => {});
-      }, 1500);
-      return () => {
-        clearTimeout(timer);
-        clearTimeout(idleTimer);
-      };
-    }
-
-    return () => clearTimeout(timer);
+    // Product caching and offline image prefetching are completely disabled to guarantee fresh delivery
   }, [products]);
 
   useEffect(() => {
@@ -863,38 +736,10 @@ export default function App() {
     safeSetStorageItem(STORAGE_KEYS.AD_POPUP_ENABLED, JSON.stringify(isAdPopupEnabled));
   }, [isAdPopupEnabled]);
 
-  // Continuous Local Storage Persistence to ensure admin edits and user applications never reset
+  // Continuous Local Storage Persistence - completely disabled to prevent cache download/accumulation
   useEffect(() => {
-    try {
-      if (products.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-      }
-    } catch {}
-  }, [products]);
-
-  useEffect(() => {
-    try {
-      if (orders.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-      }
-    } catch {}
-  }, [orders]);
-
-  useEffect(() => {
-    try {
-      if (customerUsers.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.CUSTOMER_USERS, JSON.stringify(customerUsers));
-      }
-    } catch {}
-  }, [customerUsers]);
-
-  useEffect(() => {
-    try {
-      if (customerApplications.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.CUSTOMER_APPLICATIONS, JSON.stringify(customerApplications));
-      }
-    } catch {}
-  }, [customerApplications]);
+    // Persistent caching of products, orders, customers, and applications is disabled
+  }, [products, orders, customerUsers, customerApplications]);
 
   const handleAutoRestoreLocalDb = async () => {
     try {
@@ -1446,7 +1291,6 @@ export default function App() {
 
     const handleOffline = () => {
       setIsOnline(false);
-      getCachedImagesCount().then(setCachedImagesCount).catch(() => {});
       setSyncToastMessage(
         currentLang === 'ar'
           ? '📡 وضع عدم الاتصال نشط: يمكنك مواصلة تصفح المنتجات وإجراء الطلبيات بكل حرية.'
@@ -1466,8 +1310,7 @@ export default function App() {
     window.addEventListener('offline', handleOffline);
     window.addEventListener('focus', handleFocus);
 
-    // Initial check to count cached images and drain any pending orders
-    getCachedImagesCount().then(setCachedImagesCount).catch(() => {});
+    // Initial check to drain any pending orders
     syncOfflineQueueToServer();
 
     return () => {

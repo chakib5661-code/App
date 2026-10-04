@@ -36,12 +36,24 @@ export const OFFLINE_SYNC_CACHE_KEY = 'tulip_offline_sync_snapshot';
 export function getCachedSyncData(): SyncDataResponse | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(OFFLINE_SYNC_CACHE_KEY);
+    const raw = localStorage.getItem('tulip_saved_store_settings');
     if (raw) {
-      return JSON.parse(raw);
+      const parsedSettings = JSON.parse(raw);
+      // Return a skeleton snapshot containing ONLY the website parameters (storeSettings)
+      return {
+        status: 'ok',
+        products: [],
+        orders: [],
+        customerApplications: [],
+        customerUsers: [],
+        adBanners: [],
+        storeSettings: parsedSettings,
+        lastUpdated: new Date().toISOString(),
+        serverTime: new Date().toISOString(),
+      };
     }
   } catch (e) {
-    console.warn('[Cache] Could not read offline sync cache:', e);
+    console.warn('[Cache] Could not read offline parameters:', e);
   }
   return null;
 }
@@ -49,48 +61,21 @@ export function getCachedSyncData(): SyncDataResponse | null {
 export function saveCachedSyncData(data: SyncDataResponse): void {
   if (typeof window === 'undefined' || !data) return;
   try {
-    // Avoid saving oversized base64 strings into the snapshot
-    const sanitizedProducts = (data.products || []).map((p) => {
-      if (p.imageUrl && p.imageUrl.startsWith('data:image/') && p.imageUrl.length > 200 * 1024) {
-        return { ...p, imageUrl: '/tulip-extrait-default.jpg' };
-      }
-      return p;
-    });
-
-    // SECURITY & STORAGE PRIORITY EXCLUSIONS:
-    // Strip private admin data (historical orders, customer accounts, and registration forms)
-    // from persistent caches (localStorage & IndexedDB). This prioritizes catalog and settings storage,
-    // prevents browser storage limit/quota warnings, and secures admin data on shared/personal devices.
-    const snapshot: SyncDataResponse = {
-      ...data,
-      products: sanitizedProducts,
-      orders: [],
-      customerApplications: [],
-      customerUsers: [],
-    };
-
-    localStorage.setItem(OFFLINE_SYNC_CACHE_KEY, JSON.stringify(snapshot));
-
-    // Persist optimized dataset into IndexedDB (high storage capacity)
-    idbSaveSyncSnapshot(snapshot as any).catch(() => {});
+    if (data.storeSettings) {
+      // ONLY persist the website parameters (storeSettings) to localStorage
+      localStorage.setItem('tulip_saved_store_settings', JSON.stringify(data.storeSettings));
+    }
   } catch (e) {
-    console.warn('[Cache] Could not write offline sync cache:', e);
+    console.warn('[Cache] Could not save website parameters:', e);
   }
-
-  if (Array.isArray(data.products)) {
-    idbSaveProducts(data.products).catch(() => {});
-    // Automatically prefetch & cache all product images in background for 100% offline browsing
-    prefetchProductImages(data.products).catch(() => {});
-  }
+  // Catalog & product caching, image prefetching, and IndexedDB snapshots are completely disabled
 }
 
 export async function fetchSyncData(timeoutMs = 1800, bypassCache = false): Promise<SyncDataResponse | null> {
-  // If user is explicitly offline and not bypassing cache, return cached snapshot instantly
+  // If user is explicitly offline and not bypassing cache, return cached parameters instantly
   if (!bypassCache && typeof navigator !== 'undefined' && !navigator.onLine) {
     const cached = getCachedSyncData();
     if (cached) return cached;
-    const idbCached = await idbGetSyncSnapshot();
-    if (idbCached) return idbCached as any;
   }
 
   const controller = new AbortController();
@@ -139,20 +124,6 @@ export async function fetchSyncData(timeoutMs = 1800, bypassCache = false): Prom
     console.warn('[API] directClientFetchFromSupabase notice:', supabaseErr);
   }
 
-  // If we are in Admin section and want to bypass cache, do NOT fall back to local/indexeddb cache!
-  if (bypassCache) {
-    return null;
-  }
-
-  // Fallback to local device cache or IndexedDB
-  const cached = getCachedSyncData();
-  if (cached) {
-    return cached;
-  }
-  const idbCached = await idbGetSyncSnapshot();
-  if (idbCached) {
-    return idbCached as any;
-  }
   return null;
 }
 
