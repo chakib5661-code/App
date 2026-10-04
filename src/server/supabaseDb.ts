@@ -224,13 +224,24 @@ export async function saveDatabaseToSupabase(db: ServerDatabase): Promise<boolea
 async function syncNormalizedTablesAsync(client: SupabaseClient, db: ServerDatabase): Promise<void> {
   try {
     if (db.storeSettings) {
+      const s = db.storeSettings;
       await Promise.resolve(
         client.from('tulip_store_settings').upsert({
           id: 'default',
-          ...db.storeSettings,
+          store_name: s.storeName || 'Tulip Fragrance Company',
+          store_subtitle: s.tagline || '',
+          phone: s.phone || '',
+          secondary_phone: s.phoneSecondary || null,
+          email: s.email || null,
+          address: s.address || null,
+          wilaya: s.wilaya || null,
+          minimum_order_amount_da: Number(s.minOrderAmountDA) || 0,
+          telegram_notifications_enabled: s.telegramNotificationsEnabled !== false,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' })
-      ).catch(() => {});
+      ).catch((err) => {
+        console.warn('[Supabase] Error syncing store settings table:', err?.message || err);
+      });
     }
 
     // Sync products in batches of 50
