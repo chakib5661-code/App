@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Sparkles, ArrowRight, ShoppingBag, Check, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Sparkles, ArrowRight, ShoppingBag, Check, Plus, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AdBanner, Product } from '../types';
+import { AppLanguage, translations } from '../translations';
 
 interface AdPopupModalProps {
   isOpen: boolean;
@@ -13,6 +14,9 @@ interface AdPopupModalProps {
   onAddToCart?: (product: Product, quantity: number) => void;
   onExploreClick?: (ad: AdBanner) => void;
   onExplore?: (ad: AdBanner) => void;
+  isPricesVisible?: boolean;
+  onRequireLogin?: () => void;
+  lang?: AppLanguage;
 }
 
 export const AdPopupModal: React.FC<AdPopupModalProps> = ({
@@ -25,7 +29,11 @@ export const AdPopupModal: React.FC<AdPopupModalProps> = ({
   onAddToCart,
   onExploreClick,
   onExplore,
+  isPricesVisible = false,
+  onRequireLogin,
+  lang = 'ar',
 }) => {
+  const t = translations[lang];
   // Consolidate list of banners
   const fallbackAd = directAd || directBanner || null;
   const bannersList: AdBanner[] = React.useMemo(() => {
@@ -99,6 +107,28 @@ export const AdPopupModal: React.FC<AdPopupModalProps> = ({
       targetProducts.push(found);
     }
   });
+
+  // Protect confidentiality: Mask raw prices from title, subtitle, or badge for non-logged in users
+  const displayTitle = React.useMemo(() => {
+    if (!currentAd.title) return '';
+    if (isPricesVisible) return currentAd.title;
+    return currentAd.title.replace(/\b\d+([\s.,]\d+)?\s*(DA|DZD|da|dzd)\b/gi, '*** DA');
+  }, [currentAd.title, isPricesVisible]);
+
+  const displaySubtitle = React.useMemo(() => {
+    if (!currentAd.subtitle) return '';
+    if (isPricesVisible) return currentAd.subtitle;
+    return currentAd.subtitle
+      .replace(/\b\d+([\s.,]\d+)?\s*(DA|DZD|da|dzd)\b/gi, '*** DA')
+      .replace(/\(au lieu de \*{3} DA\)/gi, '')
+      .trim();
+  }, [currentAd.subtitle, isPricesVisible]);
+
+  const displayBadgeText = React.useMemo(() => {
+    if (!currentAd.badgeText) return '';
+    if (isPricesVisible) return currentAd.badgeText;
+    return currentAd.badgeText.replace(/\b\d+([\s.,]\d+)?\s*(DA|DZD|da|dzd)\b/gi, 'PROMO');
+  }, [currentAd.badgeText, isPricesVisible]);
 
   const handleClose = () => {
     onClose(dontShowToday);
@@ -286,10 +316,10 @@ export const AdPopupModal: React.FC<AdPopupModalProps> = ({
                   )}
 
                   {/* Corner Badge */}
-                  {currentAd.badgeText && (
+                  {displayBadgeText && (
                     <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-10 inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-gradient-to-r from-[#9f0e4e] to-[#c2185b] text-white font-black text-[10px] sm:text-xs tracking-wider uppercase shadow-lg border border-rose-300/40">
                       <Sparkles className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
-                      <span>{currentAd.badgeText}</span>
+                      <span>{displayBadgeText}</span>
                     </div>
                   )}
                 </div>
@@ -301,14 +331,38 @@ export const AdPopupModal: React.FC<AdPopupModalProps> = ({
                       Tulip Fragrance Company • Offre Exclusive
                     </span>
                     <h3 className="text-xl sm:text-2xl font-black text-white leading-snug">
-                      {currentAd.title}
+                      {displayTitle}
                     </h3>
-                    {currentAd.subtitle && (
+                    {displaySubtitle && (
                       <p className="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
-                        {currentAd.subtitle}
+                        {displaySubtitle}
                       </p>
                     )}
                   </div>
+
+                  {/* Non-login Notice for Popups */}
+                  {!isPricesVisible && targetProducts.length > 0 && (
+                    <div className="p-2.5 sm:p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl sm:rounded-2xl flex items-center justify-between gap-2.5 text-xs">
+                      <div className="flex items-center gap-2 text-amber-300 font-bold">
+                        <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span className="text-[11px] sm:text-xs">
+                          {t.priceHiddenNotice} • {t.loginToSeePrices}
+                        </span>
+                      </div>
+                      {onRequireLogin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleClose();
+                            onRequireLogin();
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shrink-0 cursor-pointer transition shadow-xs"
+                        >
+                          {t.loginBtn}
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* MULTI-PRODUCT SELECTION LIST */}
                   {targetProducts.length > 0 && (
@@ -357,13 +411,33 @@ export const AdPopupModal: React.FC<AdPopupModalProps> = ({
                                   <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
                                     <span className="font-mono text-slate-300">{prod.code}</span>
                                     <span>•</span>
-                                    <span className="text-rose-300 font-bold">
-                                      {effectivePrice} DA {prod.family === 'Extrait' ? '/ 1g' : ''}
-                                    </span>
-                                    {hasDiscount && (
-                                      <span className="text-rose-400 text-[10px] font-bold line-through">
-                                        {prod.priceDA} DA
-                                      </span>
+                                    {isPricesVisible ? (
+                                      <>
+                                        <span className="text-rose-300 font-bold">
+                                          {effectivePrice} DA {prod.family === 'Extrait' ? '/ 1g' : ''}
+                                        </span>
+                                        {hasDiscount && (
+                                          <span className="text-rose-400 text-[10px] font-bold line-through">
+                                            {prod.priceDA} DA
+                                          </span>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          if (onRequireLogin) {
+                                            e.stopPropagation();
+                                            handleClose();
+                                            onRequireLogin();
+                                          }
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/15 hover:bg-amber-500/25 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer font-bold transition"
+                                        title={t.loginToSeePrices}
+                                      >
+                                        <Lock className="w-2.5 h-2.5 text-amber-400" />
+                                        <span>{t.confidentialPriceBadge}</span>
+                                      </button>
                                     )}
                                   </div>
                                 </div>

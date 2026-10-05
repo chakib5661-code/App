@@ -18,6 +18,8 @@ import {
   Loader2,
   Clock,
   MessageCircle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { CustomerApplication, CustomerUser, StoreSettings } from '../types';
 import { AppLanguage, translations } from '../translations';
@@ -85,6 +87,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   // Login form state
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -457,16 +460,25 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
                     {t.authPasswordLabel}
                   </label>
                   <div className="relative">
-                    <Lock className={`w-4 h-4 text-slate-400 absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2`} />
+                    <Lock className={`w-4 h-4 text-slate-400 absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 pointer-events-none`} />
                     <input
                       id="login-password-input"
-                      type="password"
+                      type={showPassword ? 'text' : 'password'}
                       value={passwordInput}
                       onChange={(e) => setPasswordInput(e.target.value)}
                       placeholder={t.authPasswordPlaceholder}
-                      className={`w-full ${isRtl ? 'pr-10 pl-3.5' : 'pl-10 pr-3.5'} py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500/20 focus:border-[#9f0e4e] transition`}
+                      className={`w-full ${isRtl ? 'pr-10 pl-10' : 'pl-10 pr-10'} py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500/20 focus:border-[#9f0e4e] transition`}
                       required
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className={`absolute ${isRtl ? 'left-3' : 'right-3'} top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 transition cursor-pointer focus:outline-hidden`}
+                      aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                      title={showPassword ? (lang === 'ar' ? 'إخفاء كلمة المرور' : 'Masquer le mot de passe') : (lang === 'ar' ? 'إظهار كلمة المرور' : 'Afficher le mot de passe')}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4 text-slate-500" />}
+                    </button>
                   </div>
                 </div>
 

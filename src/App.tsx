@@ -3029,6 +3029,12 @@ export default function App() {
         banner={currentAdPopup}
         banners={adBanners}
         products={products}
+        isPricesVisible={isPricesVisible}
+        onRequireLogin={() => {
+          setCustomerAuthInitialTab('login');
+          setIsCustomerAuthOpen(true);
+        }}
+        lang={currentLang}
         onAddToCart={(prod, qty) => {
           handleAddToCart(prod, qty);
           setIsCartOpen(true);

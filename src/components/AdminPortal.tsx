@@ -38,6 +38,8 @@ import {
   FileArchive,
   X,
   MessageCircle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { Product, PreOrder, StoreSettings, AdminUser, CustomerApplication, CustomerUser, AdBanner, ManagerPermissions } from '../types';
 import { downloadOrderPDF, printOrderPDF, formatDZD } from '../utils/pdfGenerator';
@@ -212,6 +214,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Login form state
   const [loginUsername, setLoginUsername] = useState('admin');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
   // Master Website Data Backup & Restore State (Security Section)
@@ -1105,14 +1108,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 </label>
                 <div className="relative">
                   <input
-                    type="password"
+                    type={showLoginPassword ? 'text' : 'password'}
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="Entrez votre mot de passe"
                     required
                     autoFocus
-                    className="w-full pl-3 pr-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                    className="w-full pl-3 pr-10 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition p-1 cursor-pointer"
+                    aria-label={showLoginPassword ? 'Masquer' : 'Afficher'}
+                    title={showLoginPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  >
+                    {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
