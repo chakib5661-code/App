@@ -540,6 +540,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
   const handleLogout = () => {
     setCurrentUser(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY_ADMIN_SESSION);
+    } catch (e) {
+      console.error(e);
+    }
+    if (onBackToStore) {
+      onBackToStore();
+    }
   };
 
   // Handle Password Change
@@ -1142,6 +1150,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <Lock className="w-4 h-4" />
                 <span>Connexion à l'Administration</span>
               </button>
+
+              {onBackToStore && (
+                <button
+                  type="button"
+                  onClick={onBackToStore}
+                  className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2 border border-slate-700/80"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Retour à la Boutique</span>
+                </button>
+              )}
             </form>
           </div>
         </div>

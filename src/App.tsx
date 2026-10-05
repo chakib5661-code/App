@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue, Suspense } from 'react';
 import {
   Sparkles,
   Layers,
@@ -32,26 +32,28 @@ import { Header } from './components/Header';
 import { ProductCard } from './components/ProductCard';
 import { ProductFilter, StockFilterType, SortOption } from './components/ProductFilter';
 import { CartDrawer } from './components/CartDrawer';
-import { PreOrderModal } from './components/PreOrderModal';
-import { OrderConfirmationModal } from './components/OrderConfirmationModal';
-import { ExcelSyncModal } from './components/ExcelSyncModal';
-import { AdminOrdersModal } from './components/AdminOrdersModal';
-import { ProductDetailModal } from './components/ProductDetailModal';
-import { AdminLoginModal } from './components/AdminLoginModal';
-import { AdminPortal } from './components/AdminPortal';
-import { CustomerAuthModal } from './components/CustomerAuthModal';
-import { AdPopupModal } from './components/AdPopupModal';
-import { OrderTrackingModal } from './components/OrderTrackingModal';
 import { QuickOrderView } from './components/QuickOrderView';
 import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
-import { InterfaceChoiceModal } from './components/InterfaceChoiceModal';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
-import { LanguageSelectionModal } from './components/LanguageSelectionModal';
 import { AppLanguage } from './translations';
-import { downloadOrderPDF, formatDZD } from './utils/pdfGenerator';
+import { formatDZD } from './utils/formatDZD';
 import { trackCustomEvent, applyServerAnalyticsConfig } from './utils/analytics';
 import { isProductTopSeller, calculateDiscountedPrice } from './utils/productUtils';
 import { detectUserDevice, DeviceInfo } from './utils/deviceDetector';
+
+// Code-split heavy modals and administration tools to slash initial bundle size and boost Core Web Vitals (LCP, INP, CLS)
+const PreOrderModal = React.lazy(() => import('./components/PreOrderModal').then(m => ({ default: m.PreOrderModal })));
+const OrderConfirmationModal = React.lazy(() => import('./components/OrderConfirmationModal').then(m => ({ default: m.OrderConfirmationModal })));
+const ExcelSyncModal = React.lazy(() => import('./components/ExcelSyncModal').then(m => ({ default: m.ExcelSyncModal })));
+const AdminOrdersModal = React.lazy(() => import('./components/AdminOrdersModal').then(m => ({ default: m.AdminOrdersModal })));
+const ProductDetailModal = React.lazy(() => import('./components/ProductDetailModal').then(m => ({ default: m.ProductDetailModal })));
+const AdminLoginModal = React.lazy(() => import('./components/AdminLoginModal').then(m => ({ default: m.AdminLoginModal })));
+const AdminPortal = React.lazy(() => import('./components/AdminPortal').then(m => ({ default: m.AdminPortal })));
+const CustomerAuthModal = React.lazy(() => import('./components/CustomerAuthModal').then(m => ({ default: m.CustomerAuthModal })));
+const AdPopupModal = React.lazy(() => import('./components/AdPopupModal').then(m => ({ default: m.AdPopupModal })));
+const OrderTrackingModal = React.lazy(() => import('./components/OrderTrackingModal').then(m => ({ default: m.OrderTrackingModal })));
+const InterfaceChoiceModal = React.lazy(() => import('./components/InterfaceChoiceModal').then(m => ({ default: m.InterfaceChoiceModal })));
+const LanguageSelectionModal = React.lazy(() => import('./components/LanguageSelectionModal').then(m => ({ default: m.LanguageSelectionModal })));
 import {
   fetchSyncData,
   submitOrderToServer,
@@ -304,6 +306,7 @@ export default function App() {
   // 2. Filter & Navigation State
   const [selectedFamily, setSelectedFamily] = useState<ProductFamily | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [stockFilter, setStockFilter] = useState<StockFilterType>('all');
   const [sortOption, setSortOption] = useState<SortOption>('default');
   const [showOnlyTopSellers, setShowOnlyTopSellers] = useState(false);
@@ -469,13 +472,18 @@ export default function App() {
     }
   }, [favorites]);
 
-  const handleToggleFavorite = (productId: string) => {
+  const handleToggleFavorite = useCallback((productId: string) => {
     setFavorites((prev) => {
       const exists = prev.includes(productId);
       const updated = exists ? prev.filter((id) => id !== productId) : [...prev, productId];
       return updated;
     });
-  };
+  }, []);
+
+  const handleRequireLogin = useCallback(() => {
+    setCustomerAuthInitialTab('login');
+    setIsCustomerAuthOpen(true);
+  }, []);
 
   const [savedPreorders, setSavedPreorders] = useState<SavedPreorder[]>(() => {
     return loadSavedPreordersForCustomer(currentCustomer);
@@ -1357,9 +1365,9 @@ export default function App() {
         if (stockFilter === 'low_stock' && (p.stock <= 0 || p.stock > (p.minAlertStock || 5))) return false;
         if (stockFilter === 'out_of_stock' && p.stock > 0) return false;
 
-        // Search query
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
+        // Search query (using deferred value to keep keystrokes 100% fluid)
+        if (deferredSearchQuery.trim()) {
+          const q = deferredSearchQuery.toLowerCase();
           const matchCode = (p.code || '').toLowerCase().includes(q);
           const matchName = (p.name || '').toLowerCase().includes(q);
           const matchCategory = (p.category || '').toLowerCase().includes(q);
@@ -1381,7 +1389,7 @@ export default function App() {
           case 'stock_desc':
             return b.stock - a.stock;
           case 'name_asc':
-            return a.name.localeCompare(b.name, 'fr');
+            return a.name > b.name ? 1 : a.name < b.name ? -1 : 0;
           default: {
             // Default sorting: place top-selling products first, then sort alphabetically
             const aTop = isProductTopSeller(a) ? 1 : 0;
@@ -1389,11 +1397,11 @@ export default function App() {
             if (bTop !== aTop) {
               return bTop - aTop;
             }
-            return a.name.localeCompare(b.name, 'fr');
+            return a.name > b.name ? 1 : a.name < b.name ? -1 : 0;
           }
         }
       });
-  }, [products, selectedFamily, stockFilter, searchQuery, sortOption, showOnlyFavorites, favorites, showOnlyTopSellers]);
+  }, [products, selectedFamily, stockFilter, deferredSearchQuery, sortOption, showOnlyFavorites, favorites, showOnlyTopSellers]);
 
   // Reset pagination to page 1 whenever search, family, or stock filters change
   useEffect(() => {
@@ -1561,8 +1569,10 @@ export default function App() {
       console.error(e);
     }
 
-    // Automatically trigger PDF download (hiding prices for non-approved/guest users)
-    downloadOrderPDF(newOrder, storeSettings, { hidePrices: !isPricesVisible });
+    // Automatically trigger PDF download (hiding prices for non-approved/guest users) via dynamic import to keep initial bundle ultra-light
+    import('./utils/pdfGenerator').then(({ downloadOrderPDF }) => {
+      downloadOrderPDF(newOrder, storeSettings, { hidePrices: !isPricesVisible });
+    }).catch(console.warn);
 
     // If offline: save to local queue and provide reassuring advice
     if (!isCurrentlyOnline) {
@@ -2224,52 +2234,54 @@ export default function App() {
   // IF ADMIN VIEW: RENDER FULL ADMIN PORTAL PAGE
   if (currentView === 'admin') {
     return (
-      <AdminPortal
-        products={products}
-        orders={orders}
-        storeSettings={storeSettings}
-        customerApplications={customerApplications}
-        customerUsers={customerUsers}
-        adBanners={adBanners}
-        isAdPopupEnabled={isAdPopupEnabled}
-        onBackToStore={() => {
-          setCurrentView('store');
-          window.location.hash = '';
-        }}
-        onUpdateProducts={(updated) => {
-          lastMutationTimeRef.current = Date.now();
-          setProducts(updated);
-          syncProductsOnServer(updated).catch(console.warn);
-        }}
-        onAddProduct={handleAddProduct}
-        onUpdateProduct={handleUpdateProduct}
-        onDeleteProduct={handleDeleteProduct}
-        onDeleteOrder={handleDeleteOrder}
-        onBulkDeleteOrders={handleBulkDeleteOrders}
-        onDeleteApplication={handleDeleteApplication}
-        onUpdateSingleStock={handleUpdateSingleStock}
-        onUpdateOrderStatus={handleUpdateOrderStatus}
-        onApproveApplication={handleApproveApplication}
-        onRejectApplication={handleRejectApplication}
-        onToggleCustomerActive={handleToggleCustomerActive}
-        onDeleteCustomer={handleDeleteCustomer}
-        onUpdateCustomer={handleUpdateCustomer}
-        onResetCustomerPassword={handleResetCustomerPassword}
-        onCreateCustomer={handleCreateCustomer}
-        onImportCustomers={handleImportCustomers}
-        onClearOldOrders={handleClearOldOrders}
-        onUpdateOrders={(newOrders) => {
-          setOrders(newOrders);
-          syncOrdersOnServer(newOrders).catch(console.warn);
-        }}
-        onAddAdBanner={handleAddAdBanner}
-        onToggleAdBanner={handleToggleAdBanner}
-        onDeleteAdBanner={handleDeleteAdBanner}
-        onPreviewAdBanner={handlePreviewAdBanner}
-        onToggleAdPopupEnabled={handleToggleAdPopupEnabled}
-        onRestoreAllData={handleRestoreAllData}
-        onUpdateSettings={(newSettings) => setStoreSettings(newSettings)}
-      />
+      <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white font-bold text-sm">Chargement de l'administration Tulip...</div>}>
+        <AdminPortal
+          products={products}
+          orders={orders}
+          storeSettings={storeSettings}
+          customerApplications={customerApplications}
+          customerUsers={customerUsers}
+          adBanners={adBanners}
+          isAdPopupEnabled={isAdPopupEnabled}
+          onBackToStore={() => {
+            setCurrentView('store');
+            window.location.hash = '';
+          }}
+          onUpdateProducts={(updated) => {
+            lastMutationTimeRef.current = Date.now();
+            setProducts(updated);
+            syncProductsOnServer(updated).catch(console.warn);
+          }}
+          onAddProduct={handleAddProduct}
+          onUpdateProduct={handleUpdateProduct}
+          onDeleteProduct={handleDeleteProduct}
+          onDeleteOrder={handleDeleteOrder}
+          onBulkDeleteOrders={handleBulkDeleteOrders}
+          onDeleteApplication={handleDeleteApplication}
+          onUpdateSingleStock={handleUpdateSingleStock}
+          onUpdateOrderStatus={handleUpdateOrderStatus}
+          onApproveApplication={handleApproveApplication}
+          onRejectApplication={handleRejectApplication}
+          onToggleCustomerActive={handleToggleCustomerActive}
+          onDeleteCustomer={handleDeleteCustomer}
+          onUpdateCustomer={handleUpdateCustomer}
+          onResetCustomerPassword={handleResetCustomerPassword}
+          onCreateCustomer={handleCreateCustomer}
+          onImportCustomers={handleImportCustomers}
+          onClearOldOrders={handleClearOldOrders}
+          onUpdateOrders={(newOrders) => {
+            setOrders(newOrders);
+            syncOrdersOnServer(newOrders).catch(console.warn);
+          }}
+          onAddAdBanner={handleAddAdBanner}
+          onToggleAdBanner={handleToggleAdBanner}
+          onDeleteAdBanner={handleDeleteAdBanner}
+          onPreviewAdBanner={handlePreviewAdBanner}
+          onToggleAdPopupEnabled={handleToggleAdPopupEnabled}
+          onRestoreAllData={handleRestoreAllData}
+          onUpdateSettings={(newSettings) => setStoreSettings(newSettings)}
+        />
+      </Suspense>
     );
   }
 
@@ -2594,7 +2606,7 @@ export default function App() {
         ) : (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {paginatedProducts.map((product) => {
+              {paginatedProducts.map((product, idx) => {
                 const inCartItem = cart.find((i) => i.product.id === product.id);
                 const cartQuantity = inCartItem ? inCartItem.quantity : 0;
 
@@ -2607,13 +2619,11 @@ export default function App() {
                     onDecreaseCartQuantity={handleDecreaseCartQuantity}
                     onQuickView={setQuickViewProduct}
                     isPricesVisible={isPricesVisible}
-                    onRequireLogin={() => {
-                      setCustomerAuthInitialTab('login');
-                      setIsCustomerAuthOpen(true);
-                    }}
+                    onRequireLogin={handleRequireLogin}
                     lang={currentLang}
                     isFavorite={favorites.includes(product.id)}
-                    onToggleFavorite={() => handleToggleFavorite(product.id)}
+                    onToggleFavorite={handleToggleFavorite}
+                    isPriority={idx < 4}
                   />
                 );
               })}
@@ -2917,148 +2927,145 @@ export default function App() {
         onAddToCart={handleAddToCart}
       />
 
-      <PreOrderModal
-        isOpen={isPreOrderModalOpen}
-        onClose={() => setIsPreOrderModalOpen(false)}
-        items={cart}
-        storeSettings={storeSettings}
-        currentCustomer={currentCustomer}
-        onSubmitOrder={handleSubmitOrder}
-        isProforma={isProformaMode}
-        isPricesVisible={isPricesVisible}
-        lang={currentLang}
-      />
+      {/* Suspense boundary for code-split modals */}
+      <Suspense fallback={null}>
+        <PreOrderModal
+          isOpen={isPreOrderModalOpen}
+          onClose={() => setIsPreOrderModalOpen(false)}
+          items={cart}
+          storeSettings={storeSettings}
+          currentCustomer={currentCustomer}
+          onSubmitOrder={handleSubmitOrder}
+          isProforma={isProformaMode}
+          isPricesVisible={isPricesVisible}
+          lang={currentLang}
+        />
 
-      <OrderConfirmationModal
-        isOpen={isConfirmationOpen}
-        onClose={() => setIsConfirmationOpen(false)}
-        order={recentOrder}
-        storeSettings={storeSettings}
-        onTrackOrder={() => {
-          setIsConfirmationOpen(false);
-          setIsOrderTrackingOpen(true);
-        }}
-        isPricesVisible={isPricesVisible}
-        lang={currentLang}
-        deviceInfo={deviceInfo}
-      />
+        <OrderConfirmationModal
+          isOpen={isConfirmationOpen}
+          onClose={() => setIsConfirmationOpen(false)}
+          order={recentOrder}
+          storeSettings={storeSettings}
+          onTrackOrder={() => {
+            setIsConfirmationOpen(false);
+            setIsOrderTrackingOpen(true);
+          }}
+          isPricesVisible={isPricesVisible}
+          lang={currentLang}
+          deviceInfo={deviceInfo}
+        />
 
-      {/* Language Selection Modal (Asks customer on first visit and remembers choice) */}
-      <LanguageSelectionModal
-        isOpen={isLanguageModalOpen}
-        currentLang={currentLang}
-        onSelectLanguage={handleConfirmLanguageSelection}
-      />
+        {/* Language Selection Modal (Asks customer on first visit and remembers choice) */}
+        <LanguageSelectionModal
+          isOpen={isLanguageModalOpen}
+          currentLang={currentLang}
+          onSelectLanguage={handleConfirmLanguageSelection}
+        />
 
-      <OrderTrackingModal
-        isOpen={isOrderTrackingOpen}
-        onClose={() => setIsOrderTrackingOpen(false)}
-        orders={orders}
-        currentCustomer={currentCustomer}
-        storeSettings={storeSettings}
-        lang={currentLang}
-      />
+        <OrderTrackingModal
+          isOpen={isOrderTrackingOpen}
+          onClose={() => setIsOrderTrackingOpen(false)}
+          orders={orders}
+          currentCustomer={currentCustomer}
+          storeSettings={storeSettings}
+          lang={currentLang}
+        />
 
-      <ExcelSyncModal
-        isOpen={isExcelSyncOpen}
-        onClose={() => setIsExcelSyncOpen(false)}
-        products={products}
-        onApplyInventory={handleApplyExcelInventory}
-        onUpdateSingleStock={handleUpdateSingleStock}
-      />
+        <ExcelSyncModal
+          isOpen={isExcelSyncOpen}
+          onClose={() => setIsExcelSyncOpen(false)}
+          products={products}
+          onApplyInventory={handleApplyExcelInventory}
+          onUpdateSingleStock={handleUpdateSingleStock}
+        />
 
-      <AdminOrdersModal
-        isOpen={isAdminOrdersOpen}
-        onClose={() => setIsAdminOrdersOpen(false)}
-        orders={orders}
-        storeSettings={storeSettings}
-        onUpdateOrderStatus={handleUpdateOrderStatus}
-        onDeleteOrder={handleDeleteOrder}
-      />
+        <AdminOrdersModal
+          isOpen={isAdminOrdersOpen}
+          onClose={() => setIsAdminOrdersOpen(false)}
+          orders={orders}
+          storeSettings={storeSettings}
+          onUpdateOrderStatus={handleUpdateOrderStatus}
+          onDeleteOrder={handleDeleteOrder}
+        />
 
-      <ProductDetailModal
-        product={quickViewProduct}
-        onClose={() => setQuickViewProduct(null)}
-        cartQuantity={
-          quickViewProduct
-            ? cart.find((i) => i.product.id === quickViewProduct.id)?.quantity || 0
-            : 0
-        }
-        onAddToCart={handleAddToCart}
-        isPricesVisible={isPricesVisible}
-        onRequireLogin={() => {
-          setCustomerAuthInitialTab('login');
-          setIsCustomerAuthOpen(true);
-        }}
-        lang={currentLang}
-        isFavorite={quickViewProduct ? favorites.includes(quickViewProduct.id) : false}
-        onToggleFavorite={() => quickViewProduct && handleToggleFavorite(quickViewProduct.id)}
-      />
+        <ProductDetailModal
+          product={quickViewProduct}
+          onClose={() => setQuickViewProduct(null)}
+          cartQuantity={
+            quickViewProduct
+              ? cart.find((i) => i.product.id === quickViewProduct.id)?.quantity || 0
+              : 0
+          }
+          onAddToCart={handleAddToCart}
+          isPricesVisible={isPricesVisible}
+          onRequireLogin={handleRequireLogin}
+          lang={currentLang}
+          isFavorite={quickViewProduct ? favorites.includes(quickViewProduct.id) : false}
+          onToggleFavorite={() => quickViewProduct && handleToggleFavorite(quickViewProduct.id)}
+        />
 
-      {/* Interface Choice Modal (allows customer to choose between Showroom and Quick Order) */}
-      <InterfaceChoiceModal
-        isOpen={isInterfaceChoiceOpen}
-        onClose={() => setIsInterfaceChoiceOpen(false)}
-        currentInterface={currentInterface}
-        onSelectInterface={handleSelectInterface}
-        lang={currentLang}
-      />
+        {/* Interface Choice Modal (allows customer to choose between Showroom and Quick Order) */}
+        <InterfaceChoiceModal
+          isOpen={isInterfaceChoiceOpen}
+          onClose={() => setIsInterfaceChoiceOpen(false)}
+          currentInterface={currentInterface}
+          onSelectInterface={handleSelectInterface}
+          lang={currentLang}
+        />
 
-      {/* Customer Login & Registration Modal */}
-      <CustomerAuthModal
-        isOpen={isCustomerAuthOpen}
-        onClose={() => setIsCustomerAuthOpen(false)}
-        initialTab={customerAuthInitialTab}
-        applications={customerApplications}
-        existingApplications={customerApplications}
-        registeredCustomers={customerUsers}
-        storeSettings={storeSettings}
-        onLoginSuccess={(customer) => {
-          handleLoginSuccess(customer);
-          setIsCustomerAuthOpen(false);
-        }}
-        onRegisterSubmit={(appData) => {
-          handleRegisterSubmit(appData);
-        }}
-      />
+        {/* Customer Login & Registration Modal */}
+        <CustomerAuthModal
+          isOpen={isCustomerAuthOpen}
+          onClose={() => setIsCustomerAuthOpen(false)}
+          initialTab={customerAuthInitialTab}
+          applications={customerApplications}
+          existingApplications={customerApplications}
+          registeredCustomers={customerUsers}
+          storeSettings={storeSettings}
+          onLoginSuccess={(customer) => {
+            handleLoginSuccess(customer);
+            setIsCustomerAuthOpen(false);
+          }}
+          onRegisterSubmit={(appData) => {
+            handleRegisterSubmit(appData);
+          }}
+        />
 
-      {/* Advertising Popup Modal (shows random or previewed promo banner with slide navigation) */}
-      <AdPopupModal
-        isOpen={isAdPopupOpen}
-        onClose={handleCloseAdPopup}
-        banner={currentAdPopup}
-        banners={adBanners}
-        products={products}
-        isPricesVisible={isPricesVisible}
-        onRequireLogin={() => {
-          setCustomerAuthInitialTab('login');
-          setIsCustomerAuthOpen(true);
-        }}
-        lang={currentLang}
-        onAddToCart={(prod, qty) => {
-          handleAddToCart(prod, qty);
-          setIsCartOpen(true);
-          setSyncToastMessage(`"${prod.name}" a été ajouté au panier !`);
-          setTimeout(() => setSyncToastMessage(null), 3000);
-        }}
-        onExplore={handleAdExplore}
-      />
+        {/* Advertising Popup Modal (shows random or previewed promo banner with slide navigation) */}
+        <AdPopupModal
+          isOpen={isAdPopupOpen}
+          onClose={handleCloseAdPopup}
+          banner={currentAdPopup}
+          banners={adBanners}
+          products={products}
+          isPricesVisible={isPricesVisible}
+          onRequireLogin={handleRequireLogin}
+          lang={currentLang}
+          onAddToCart={(prod, qty) => {
+            handleAddToCart(prod, qty);
+            setIsCartOpen(true);
+            setSyncToastMessage(`"${prod.name}" a été ajouté au panier !`);
+            setTimeout(() => setSyncToastMessage(null), 3000);
+          }}
+          onExplore={handleAdExplore}
+        />
 
-      {/* Admin Unlock Modal to reveal Excel import tools */}
-      <AdminLoginModal
-        isOpen={isAdminLoginOpen}
-        onClose={() => setIsAdminLoginOpen(false)}
-        onUnlock={() => {
-          setIsAdminMode(true);
-          setSyncToastMessage("Mode Gestionnaire activé. Outils d'administration débloqués.");
-          setTimeout(() => setSyncToastMessage(null), 4000);
-        }}
-        onSuccess={() => {
-          setIsAdminMode(true);
-          setSyncToastMessage("Mode Gestionnaire activé. Outils d'administration débloqués.");
-          setTimeout(() => setSyncToastMessage(null), 4000);
-        }}
-      />
+        {/* Admin Unlock Modal to reveal Excel import tools */}
+        <AdminLoginModal
+          isOpen={isAdminLoginOpen}
+          onClose={() => setIsAdminLoginOpen(false)}
+          onUnlock={() => {
+            setIsAdminMode(true);
+            setSyncToastMessage("Mode Gestionnaire activé. Outils d'administration débloqués.");
+            setTimeout(() => setSyncToastMessage(null), 4000);
+          }}
+          onSuccess={() => {
+            setIsAdminMode(true);
+            setSyncToastMessage("Mode Gestionnaire activé. Outils d'administration débloqués.");
+            setTimeout(() => setSyncToastMessage(null), 4000);
+          }}
+        />
+      </Suspense>
     </div>
   );
 }

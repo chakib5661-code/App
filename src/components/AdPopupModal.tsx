@@ -109,26 +109,26 @@ export const AdPopupModal: React.FC<AdPopupModalProps> = ({
   });
 
   // Protect confidentiality: Mask raw prices from title, subtitle, or badge for non-logged in users
-  const displayTitle = React.useMemo(() => {
-    if (!currentAd.title) return '';
-    if (isPricesVisible) return currentAd.title;
-    return currentAd.title.replace(/\b\d+([\s.,]\d+)?\s*(DA|DZD|da|dzd)\b/gi, '*** DA');
-  }, [currentAd.title, isPricesVisible]);
+  const displayTitle = !currentAd.title
+    ? ''
+    : isPricesVisible
+    ? currentAd.title
+    : currentAd.title.replace(/\b\d+([\s.,]\d+)?\s*(DA|DZD|da|dzd)\b/gi, '*** DA');
 
-  const displaySubtitle = React.useMemo(() => {
-    if (!currentAd.subtitle) return '';
-    if (isPricesVisible) return currentAd.subtitle;
-    return currentAd.subtitle
-      .replace(/\b\d+([\s.,]\d+)?\s*(DA|DZD|da|dzd)\b/gi, '*** DA')
-      .replace(/\(au lieu de \*{3} DA\)/gi, '')
-      .trim();
-  }, [currentAd.subtitle, isPricesVisible]);
+  const displaySubtitle = !currentAd.subtitle
+    ? ''
+    : isPricesVisible
+    ? currentAd.subtitle
+    : currentAd.subtitle
+        .replace(/\b\d+([\s.,]\d+)?\s*(DA|DZD|da|dzd)\b/gi, '*** DA')
+        .replace(/\(au lieu de \*{3} DA\)/gi, '')
+        .trim();
 
-  const displayBadgeText = React.useMemo(() => {
-    if (!currentAd.badgeText) return '';
-    if (isPricesVisible) return currentAd.badgeText;
-    return currentAd.badgeText.replace(/\b\d+([\s.,]\d+)?\s*(DA|DZD|da|dzd)\b/gi, 'PROMO');
-  }, [currentAd.badgeText, isPricesVisible]);
+  const displayBadgeText = !currentAd.badgeText
+    ? ''
+    : isPricesVisible
+    ? currentAd.badgeText
+    : currentAd.badgeText.replace(/\b\d+([\s.,]\d+)?\s*(DA|DZD|da|dzd)\b/gi, 'PROMO');
 
   const handleClose = () => {
     onClose(dontShowToday);

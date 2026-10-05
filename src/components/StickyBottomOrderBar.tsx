@@ -2,7 +2,7 @@ import React from 'react';
 import { ShoppingBag, ArrowRight } from 'lucide-react';
 import { CartItem } from '../types';
 import { AppLanguage, translations } from '../translations';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { calculateDiscountedPrice } from '../utils/productUtils';
 
 interface StickyBottomOrderBarProps {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Minus, Check, Sparkles, Layers, Wrench, Package, Lock, XCircle, Heart, Flame } from 'lucide-react';
 import { Product } from '../types';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { isProductTopSeller, calculateDiscountedPrice } from '../utils/productUtils';
@@ -17,9 +17,10 @@ interface ProductCardProps {
   lang?: AppLanguage;
   isFavorite?: boolean;
   onToggleFavorite?: (productId: string) => void;
+  isPriority?: boolean;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({
+const ProductCardComponent: React.FC<ProductCardProps> = ({
   product,
   cartQuantity,
   onAddToCart,
@@ -30,6 +31,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   lang = 'ar',
   isFavorite = false,
   onToggleFavorite,
+  isPriority = false,
 }) => {
   const t = translations[lang];
   const isExtrait = product.family === 'Extrait';
@@ -128,8 +130,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=600')
           }
           alt={localized.name}
+          width={300}
+          height={192}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          loading="lazy"
+          loading={isPriority ? 'eager' : 'lazy'}
+          fetchPriority={isPriority ? 'high' : 'auto'}
           decoding="async"
           referrerPolicy="no-referrer"
           onError={(e) => {
@@ -471,3 +476,5 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     </div>
   );
 };
+
+export const ProductCard = React.memo(ProductCardComponent);

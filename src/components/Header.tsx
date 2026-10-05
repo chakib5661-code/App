@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { ProductFamily, StoreSettings, CustomerUser } from '../types';
 import { INITIAL_STORE_SETTINGS } from '../data/initialProducts';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { TulipLogo } from './TulipLogo';
 import { AppLanguage, translations } from '../translations';
 

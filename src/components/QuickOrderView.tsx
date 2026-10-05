@@ -17,7 +17,7 @@ import {
   Flame,
 } from 'lucide-react';
 import { Product, ProductFamily, CartItem } from '../types';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { isProductTopSeller, calculateDiscountedPrice } from '../utils/productUtils';
@@ -401,6 +401,10 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                             : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=200')
                         }
                         alt={localized.name}
+                        width={64}
+                        height={64}
+                        loading="lazy"
+                        decoding="async"
                         className="w-16 h-16 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200"
                         referrerPolicy="no-referrer"
                         onError={(e) => {
@@ -636,6 +640,10 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                                     : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=200')
                                 }
                                 alt={localized.name}
+                                width={48}
+                                height={48}
+                                loading="lazy"
+                                decoding="async"
                                 className="w-12 h-12 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200 cursor-pointer hover:opacity-80 transition"
                                 referrerPolicy="no-referrer"
                                 onError={(e) => {

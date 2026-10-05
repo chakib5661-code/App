@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Sparkles, Layers, Wrench, Package, MapPin, Check, Plus, Minus, XCircle, ShieldCheck, Lock, Heart } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Product } from '../types';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { calculateDiscountedPrice } from '../utils/productUtils';

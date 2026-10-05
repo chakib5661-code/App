@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { Product, CartItem, SavedPreorder } from '../types';
 import { calculateDiscountedPrice } from '../utils/productUtils';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 
