@@ -92,6 +92,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [wilayaCode, setWilayaCode] = useState('16');
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [submittedApp, setSubmittedApp] = useState<{
     fullName: string;
@@ -245,9 +246,10 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
     }
 
     const defaultCompanyName = 'Parfumerie Client';
-    const defaultWilayaCode = '16';
-    const defaultWilayaName = 'Alger';
-    const defaultCommune = 'Alger';
+    const foundWilaya = ALGERIAN_WILAYAS.find((w) => w.code === wilayaCode);
+    const selectedWilayaCode = wilayaCode;
+    const selectedWilayaName = foundWilaya ? foundWilaya.name : 'Alger';
+    const defaultCommune = selectedWilayaName;
     const defaultNotes = 'Demande rapide (Adresse à préciser ultérieurement)';
 
     setIsRegistering(true);
@@ -260,8 +262,8 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
       phone: cleanPhone || phone.trim(),
       secondaryPhone: undefined,
       email: email.trim().toLowerCase() || `${(cleanPhone || phone).replace(/\D/g, '')}@tulip-client.dz`,
-      wilayaCode: defaultWilayaCode,
-      wilayaName: defaultWilayaName,
+      wilayaCode: selectedWilayaCode,
+      wilayaName: selectedWilayaName,
       commune: defaultCommune,
       notes: defaultNotes,
       autoApprove: false,
@@ -278,8 +280,8 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
           fullName: fullName.trim(),
           companyName: defaultCompanyName,
           phone: phone.trim(),
-          wilayaName: defaultWilayaName,
-          wilayaCode: defaultWilayaCode,
+          wilayaName: selectedWilayaName,
+          wilayaCode: selectedWilayaCode,
         });
         setRegisterSuccess(true);
         onRegisterSubmit({
@@ -288,8 +290,8 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
           phone: phone.trim(),
           secondaryPhone: undefined,
           email: email.trim().toLowerCase(),
-          wilayaCode: defaultWilayaCode,
-          wilayaName: defaultWilayaName,
+          wilayaCode: selectedWilayaCode,
+          wilayaName: selectedWilayaName,
           commune: defaultCommune,
           notes: defaultNotes,
         });
@@ -312,8 +314,8 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
       phone: phone.trim(),
       secondaryPhone: undefined,
       email: email.trim().toLowerCase(),
-      wilayaCode: defaultWilayaCode,
-      wilayaName: defaultWilayaName,
+      wilayaCode: selectedWilayaCode,
+      wilayaName: selectedWilayaName,
       commune: defaultCommune,
       notes: defaultNotes,
     });
@@ -322,8 +324,8 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
       fullName: fullName.trim(),
       companyName: defaultCompanyName,
       phone: phone.trim(),
-      wilayaName: defaultWilayaName,
-      wilayaCode: defaultWilayaCode,
+      wilayaName: selectedWilayaName,
+      wilayaCode: selectedWilayaCode,
     });
     setRegisterSuccess(true);
   };
@@ -665,6 +667,25 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
                     placeholder="Ex: contact@parfumerie.dz"
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-hidden focus:border-[#9f0e4e] transition"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                    {t.wilayaLabel} <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    id="reg-wilaya"
+                    value={wilayaCode}
+                    onChange={(e) => setWilayaCode(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-hidden focus:border-[#9f0e4e] transition cursor-pointer"
+                    required
+                  >
+                    {ALGERIAN_WILAYAS.map((wilaya) => (
+                      <option key={wilaya.code} value={wilaya.code}>
+                        {wilaya.code} - {wilaya.name} ({wilaya.arabicName})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-600 text-[11px] leading-relaxed">
