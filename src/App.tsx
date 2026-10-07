@@ -2388,6 +2388,7 @@ export default function App() {
           cart={cart}
           onAddToCart={handleAddToCart}
           onUpdateCartQuantity={handleUpdateCartQuantity}
+          onDecreaseCartQuantity={handleDecreaseCartQuantity}
           onOpenCart={() => setIsCartOpen(true)}
           onQuickView={setQuickViewProduct}
           onSwitchToShowroom={() => handleSelectInterface('showroom')}
@@ -2975,6 +2976,7 @@ export default function App() {
           isOpen={isExcelSyncOpen}
           onClose={() => setIsExcelSyncOpen(false)}
           products={products}
+          storeSettings={storeSettings}
           onApplyInventory={handleApplyExcelInventory}
           onUpdateSingleStock={handleUpdateSingleStock}
         />

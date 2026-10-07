@@ -196,11 +196,11 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenCustomerAuth('login')}
-                    className="px-2.5 sm:px-3 py-2 rounded-xl bg-pink-50 hover:bg-pink-100 text-[#880e4f] border border-pink-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#70083b] to-[#9f0e4e] hover:from-[#880e4f] hover:to-[#be185d] text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md hover:scale-105 active:scale-95 ring-2 ring-pink-500/30"
                     title={t.loginBtn}
                   >
-                    <Lock className="w-3.5 h-3.5 text-[#9f0e4e]" />
-                    <span className="hidden sm:inline">{t.loginBtn}</span>
+                    <Lock className="w-3.5 h-3.5 text-pink-200 animate-pulse shrink-0" />
+                    <span>{t.loginBtn}</span>
                   </button>
 
                   <button

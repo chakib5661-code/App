@@ -12,19 +12,22 @@ import {
   Edit3,
   Search,
   Check,
+  Image as ImageIcon,
 } from 'lucide-react';
-import { Product, ProductFamily } from '../types';
+import { Product, ProductFamily, StoreSettings } from '../types';
 import {
   parseInventoryFile,
   downloadSampleExcelTemplate,
   exportCatalogToExcel,
 } from '../utils/excelParser';
 import { formatDZD } from '../utils/pdfGenerator';
+import { syncExtraitImagesFromBlob } from '../utils/api';
 
 interface ExcelSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
   products: Product[];
+  storeSettings?: StoreSettings;
   onApplyInventory: (newProducts: Product[]) => void;
   onUpdateSingleStock: (productId: string, newStock: number, newPriceDA?: number) => void;
 }
@@ -33,6 +36,7 @@ export const ExcelSyncModal: React.FC<ExcelSyncModalProps> = ({
   isOpen,
   onClose,
   products,
+  storeSettings,
   onApplyInventory,
   onUpdateSingleStock,
 }) => {
@@ -44,6 +48,7 @@ export const ExcelSyncModal: React.FC<ExcelSyncModalProps> = ({
   const [fileName, setFileName] = useState<string | null>(null);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('merge');
   const [applySuccess, setApplySuccess] = useState(false);
+  const [blobNotice, setBlobNotice] = useState<string | null>(null);
   const [manualSearch, setManualSearch] = useState('');
   const [editedStockMap, setEditedStockMap] = useState<Record<string, number>>({});
   const [editedPriceMap, setEditedPriceMap] = useState<Record<string, number>>({});
@@ -84,20 +89,45 @@ export const ExcelSyncModal: React.FC<ExcelSyncModalProps> = ({
     }
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (parsedProducts.length === 0) return;
 
-    // Requirement:
-    // "and about the import excel we will erace all the inventory of Extrait and remplace it with the new one"
-    // "and about 'flacon' we will separate them from the excel import and allow to add them manually with picture price in separate add tools in administration"
+    setIsProcessing(true);
+    setBlobNotice(null);
 
     // All Excel imported lines become Extraits (raw fragrance concentrates sold by gram)
-    const newExtraits: Product[] = parsedProducts.map((p) => ({
-      ...p,
-      family: 'Extrait' as const,
-      unit: p.unit || '1g (Contenant 100g)',
-      lastUpdated: new Date().toISOString(),
-    }));
+    let newExtraits: Product[] = parsedProducts.map((p) => {
+      const existing = products.find((ex) => ex.code === p.code && ex.family === 'Extrait');
+      return {
+        ...p,
+        family: 'Extrait' as const,
+        unit: p.unit || '1g (Contenant 100g)',
+        imageUrl: existing?.imageUrl || p.imageUrl || '/tulip-extrait-default.jpg',
+        lastUpdated: new Date().toISOString(),
+      };
+    });
+
+    // Auto-associate with Vercel Blob folder images (e.g. P115 -> P115.jpg)
+    try {
+      const folderName = storeSettings?.vercelBlobFolderName || 'extraits';
+      const blobRes = await syncExtraitImagesFromBlob({
+        products: newExtraits,
+        folderName,
+        saveToDatabase: false,
+      });
+      if (blobRes.success && blobRes.products) {
+        newExtraits = blobRes.products.filter((p) => p.family === 'Extrait');
+        if (blobRes.matchedCount > 0) {
+          setBlobNotice(
+            `✨ ${blobRes.matchedCount} extrait(s) ont été associés automatiquement à leurs images Vercel Blob (dossier "${blobRes.folderName}") !`
+          );
+        }
+      }
+    } catch (e) {
+      console.warn('[ExcelSyncModal] Vercel Blob auto-association note:', e);
+    } finally {
+      setIsProcessing(false);
+    }
 
     // Keep all manually managed Flacons and Accessories completely untouched
     const existingFlacons = products.filter((p) => p.family === 'Flacon');
@@ -111,7 +141,7 @@ export const ExcelSyncModal: React.FC<ExcelSyncModalProps> = ({
     setTimeout(() => {
       setApplySuccess(false);
       onClose();
-    }, 1500);
+    }, 1800);
   };
 
   const filteredManualProducts = products.filter(
@@ -261,6 +291,34 @@ export const ExcelSyncModal: React.FC<ExcelSyncModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Vercel Blob Extraits Images Integration info banner */}
+              <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl flex items-start sm:items-center justify-between gap-3 text-xs text-sky-950">
+                <div className="flex items-start sm:items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-700 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-sky-900 block">
+                      Association Photos Vercel Blob Automatique
+                    </span>
+                    <span className="text-slate-600">
+                      Les extraits importés seront reliés à leur photo dans votre dossier Vercel Blob{' '}
+                      <code className="bg-sky-100 px-1.5 py-0.5 rounded font-mono font-bold text-sky-900">
+                        {storeSettings?.vercelBlobFolderName || 'extraits'}/
+                      </code>{' '}
+                      selon leur référence (ex : <code className="bg-sky-100 px-1 py-0.5 rounded font-mono text-sky-900">P115.jpg</code>, <code className="bg-sky-100 px-1 py-0.5 rounded font-mono text-sky-900">P115.png</code>).
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {blobNotice && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-800 font-bold flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{blobNotice}</span>
+                </div>
+              )}
 
               {/* Parse Results Preview */}
               {parsedProducts.length > 0 && (

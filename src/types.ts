@@ -95,6 +95,8 @@ export interface StoreSettings {
   telegramAccessChatId?: string;
   telegramNotificationsEnabled?: boolean;
   underConstruction?: boolean;
+  vercelBlobFolderName?: string;
+  vercelBlobToken?: string;
 }
 
 export interface ManagerPermissions {

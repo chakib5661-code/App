@@ -120,7 +120,10 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
       className="bg-white rounded-2xl border border-rose-100/90 shadow-2xs hover:border-rose-300 hover:shadow-xl hover:shadow-rose-950/5 transition-all duration-300 overflow-hidden flex flex-col justify-between"
     >
       {/* Product Image & Badges */}
-      <div className="relative h-48 bg-slate-100 overflow-hidden group">
+      <div
+        onClick={() => onQuickView?.(product)}
+        className="relative h-48 bg-slate-100 overflow-hidden group cursor-pointer"
+      >
         <img
           src={
             product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
@@ -132,7 +135,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
           alt={localized.name}
           width={300}
           height={192}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          className="w-full h-full object-cover group-hover:scale-112 transition-transform duration-500 ease-out"
           loading={isPriority ? 'eager' : 'lazy'}
           fetchPriority={isPriority ? 'high' : 'auto'}
           decoding="async"
@@ -293,7 +296,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
               <button
                 type="button"
                 onClick={onRequireLogin}
-                className="text-xs font-bold text-amber-800 hover:text-amber-950 hover:underline cursor-pointer"
+                className="px-3 py-1 rounded-lg bg-[#9f0e4e] hover:bg-[#880e4f] text-white text-[11px] font-black shadow-sm transition active:scale-95 cursor-pointer shrink-0"
               >
                 {t.loginBtn}
               </button>

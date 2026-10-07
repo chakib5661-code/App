@@ -941,5 +941,102 @@ export async function importDatabaseFromBlobOnServer(
   }
 }
 
+export interface BlobExtraitSyncResult {
+  success: boolean;
+  isConfigured: boolean;
+  folderName: string;
+  totalExtraits: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  totalImagesInFolder?: number;
+  matchedList?: Array<{ code: string; name: string; imageUrl: string; filename: string }>;
+  unmatchedCodes?: string[];
+  unmatchedBlobs?: string[];
+  products?: Product[];
+  error?: string;
+  message?: string;
+}
+
+export async function fetchBlobStatus(): Promise<{
+  configured: boolean;
+  hasEnvToken: boolean;
+  folderName: string;
+}> {
+  try {
+    const res = await fetch('/api/blob/status');
+    return await res.json();
+  } catch {
+    return { configured: false, hasEnvToken: false, folderName: 'extraits' };
+  }
+}
+
+export async function listExtraitImagesFromBlob(options?: {
+  folder?: string;
+  token?: string;
+}): Promise<{
+  success: boolean;
+  isConfigured: boolean;
+  folder: string;
+  count: number;
+  files: Array<{
+    pathname: string;
+    url: string;
+    filename: string;
+    referenceCandidate: string;
+    size: number;
+    uploadedAt: string;
+  }>;
+  error?: string;
+}> {
+  try {
+    const params = new URLSearchParams();
+    if (options?.folder) params.set('folder', options.folder);
+    if (options?.token) params.set('token', options.token);
+    const res = await fetch(`/api/blob/list-extrait-images?${params.toString()}`);
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      isConfigured: false,
+      folder: options?.folder || 'extraits',
+      count: 0,
+      files: [],
+      error: err.message || 'Erreur réseau',
+    };
+  }
+}
+
+export async function syncExtraitImagesFromBlob(options?: {
+  folderName?: string;
+  products?: Product[];
+  token?: string;
+  saveToDatabase?: boolean;
+}): Promise<BlobExtraitSyncResult> {
+  try {
+    const res = await fetch('/api/blob/sync-extrait-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        folderName: options?.folderName,
+        products: options?.products,
+        token: options?.token,
+        saveToDatabase: options?.saveToDatabase !== false,
+      }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('[API] syncExtraitImagesFromBlob error:', err);
+    return {
+      success: false,
+      isConfigured: false,
+      folderName: options?.folderName || 'extraits',
+      totalExtraits: 0,
+      matchedCount: 0,
+      unmatchedCount: 0,
+      error: err.message || 'Erreur de connexion au serveur.',
+    };
+  }
+}
+
 
 
