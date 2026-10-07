@@ -11,7 +11,7 @@ interface ProductCardProps {
   cartQuantity: number;
   onAddToCart: (product: Product, quantity: number) => void;
   onDecreaseCartQuantity?: (productId: string, quantityToDecrease: number) => void;
-  onQuickView?: (product: Product) => void;
+  onQuickView?: (product: Product, openFullImage?: boolean) => void;
   isPricesVisible?: boolean;
   onRequireLogin?: () => void;
   lang?: AppLanguage;
@@ -121,9 +121,12 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
     >
       {/* Product Image & Badges */}
       <div
-        onClick={() => onQuickView?.(product)}
+        onClick={() => {
+          const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+          onQuickView?.(product, isMobile);
+        }}
         className="relative h-48 bg-slate-100 overflow-hidden group cursor-zoom-in"
-        title="Cliquer pour voir les détails et zoomer"
+        title="Cliquer pour afficher la photo en grand format et zoomer"
       >
         <img
           src={

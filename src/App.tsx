@@ -497,22 +497,245 @@ export default function App() {
   }, [currentCustomer]);
 
   // Automatically scroll to the top of the catalog when search query changes
+  // 1. Scroll back to top after selecting filter or searching for product
+  const isFirstFilterMountRef = useRef(true);
   useEffect(() => {
-    if (!searchQuery) return;
-    
-    // Debounce the scroll to top so it doesn't jump while typing rapidly
+    if (isFirstFilterMountRef.current) {
+      isFirstFilterMountRef.current = false;
+      return;
+    }
+    // Reset pagination to first page
+    setCurrentPage(1);
+
+    // Scroll smoothly to top of page/catalog if scrolled down
     const timeout = setTimeout(() => {
-      const catalogEl = document.getElementById('search-products-input');
-      if (catalogEl) {
-        // Scroll the filter bar/catalog smoothly into view
-        catalogEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else {
+      if (typeof window !== 'undefined' && window.scrollY > 40) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
-    }, 600);
+    }, 120);
 
     return () => clearTimeout(timeout);
-  }, [searchQuery]);
+  }, [
+    selectedFamily,
+    deferredSearchQuery,
+    stockFilter,
+    sortOption,
+    showOnlyFavorites,
+    showOnlyTopSellers,
+  ]);
+
+  // 2. Mobile Navigation: Handle phone "Return / Back" button and prevent accidental tab close
+  const [backExitPrompt, setBackExitPrompt] = useState(false);
+  const lastBackPressTimeRef = useRef<number>(0);
+
+  // Initialize safety history entry on mount so mobile back doesn't close the browser tab
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        if (!window.history.state || !window.history.state.tulipRoot) {
+          window.history.replaceState({ tulipRoot: true, step: 0 }, '');
+          window.history.pushState({ tulipRoot: true, step: 1 }, '');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
+  // Track active overlay state in ref to avoid stale closures in window event listener
+  const overlaysStateRef = useRef({
+    quickViewProduct,
+    isCartOpen,
+    isPreOrderModalOpen,
+    isConfirmationOpen,
+    isCustomerAuthOpen,
+    isOrderTrackingOpen,
+    isExcelSyncOpen,
+    isAdminOrdersOpen,
+    isAdminLoginOpen,
+    isPwaGuideOpen,
+    isInterfaceChoiceOpen,
+    isAdPopupOpen,
+    currentView,
+    currentInterface,
+    searchQuery,
+  });
+
+  useEffect(() => {
+    overlaysStateRef.current = {
+      quickViewProduct,
+      isCartOpen,
+      isPreOrderModalOpen,
+      isConfirmationOpen,
+      isCustomerAuthOpen,
+      isOrderTrackingOpen,
+      isExcelSyncOpen,
+      isAdminOrdersOpen,
+      isAdminLoginOpen,
+      isPwaGuideOpen,
+      isInterfaceChoiceOpen,
+      isAdPopupOpen,
+      currentView,
+      currentInterface,
+      searchQuery,
+    };
+  }, [
+    quickViewProduct,
+    isCartOpen,
+    isPreOrderModalOpen,
+    isConfirmationOpen,
+    isCustomerAuthOpen,
+    isOrderTrackingOpen,
+    isExcelSyncOpen,
+    isAdminOrdersOpen,
+    isAdminLoginOpen,
+    isPwaGuideOpen,
+    isInterfaceChoiceOpen,
+    isAdPopupOpen,
+    currentView,
+    currentInterface,
+    searchQuery,
+  ]);
+
+  // Push history state whenever any overlay opens so the phone Return button pops it
+  const isAnyOverlayActive = Boolean(
+    quickViewProduct ||
+    isCartOpen ||
+    isPreOrderModalOpen ||
+    isConfirmationOpen ||
+    isCustomerAuthOpen ||
+    isOrderTrackingOpen ||
+    isExcelSyncOpen ||
+    isAdminOrdersOpen ||
+    isAdminLoginOpen ||
+    isPwaGuideOpen ||
+    isInterfaceChoiceOpen ||
+    isAdPopupOpen
+  );
+  const prevAnyOverlayActiveRef = useRef(false);
+
+  useEffect(() => {
+    if (isAnyOverlayActive && !prevAnyOverlayActiveRef.current) {
+      try {
+        window.history.pushState({ tulipModal: true }, '');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    prevAnyOverlayActiveRef.current = isAnyOverlayActive;
+  }, [isAnyOverlayActive]);
+
+  // Listen to popstate when user presses phone return button
+  useEffect(() => {
+    const handlePopState = () => {
+      const state = overlaysStateRef.current;
+
+      // 1. Close any open modal or drawer first
+      if (state.quickViewProduct) {
+        setQuickViewProduct(null);
+        return;
+      }
+      if (state.isCartOpen) {
+        setIsCartOpen(false);
+        return;
+      }
+      if (state.isPreOrderModalOpen) {
+        setIsPreOrderModalOpen(false);
+        return;
+      }
+      if (state.isCustomerAuthOpen) {
+        setIsCustomerAuthOpen(false);
+        return;
+      }
+      if (state.isOrderTrackingOpen) {
+        setIsOrderTrackingOpen(false);
+        return;
+      }
+      if (state.isConfirmationOpen) {
+        setIsConfirmationOpen(false);
+        return;
+      }
+      if (state.isExcelSyncOpen) {
+        setIsExcelSyncOpen(false);
+        return;
+      }
+      if (state.isAdminOrdersOpen) {
+        setIsAdminOrdersOpen(false);
+        return;
+      }
+      if (state.isAdminLoginOpen) {
+        setIsAdminLoginOpen(false);
+        return;
+      }
+      if (state.isPwaGuideOpen) {
+        setIsPwaGuideOpen(false);
+        return;
+      }
+      if (state.isInterfaceChoiceOpen) {
+        setIsInterfaceChoiceOpen(false);
+        return;
+      }
+      if (state.isAdPopupOpen) {
+        setIsAdPopupOpen(false);
+        return;
+      }
+
+      // 2. If in Admin Portal, return to Storefront
+      if (state.currentView === 'admin') {
+        setCurrentView('store');
+        try {
+          window.history.pushState({ tulipRoot: true, step: 1 }, '');
+        } catch (e) {
+          console.error(e);
+        }
+        return;
+      }
+
+      // 3. If in Quick Order view, switch back to Showroom
+      if (state.currentInterface === 'quick') {
+        setCurrentInterface('showroom');
+        try {
+          window.history.pushState({ tulipRoot: true, step: 1 }, '');
+        } catch (e) {
+          console.error(e);
+        }
+        return;
+      }
+
+      // 4. If search query is entered, clear it
+      if (state.searchQuery.trim() !== '') {
+        setSearchQuery('');
+        try {
+          window.history.pushState({ tulipRoot: true, step: 1 }, '');
+        } catch (e) {
+          console.error(e);
+        }
+        return;
+      }
+
+      // 5. At root storefront with no overlays:
+      // Prevent accidental tab closure. Double-tap within 2.2s allows exiting.
+      const now = Date.now();
+      if (now - lastBackPressTimeRef.current < 2200) {
+        // Double-tap confirmed: allow native exit
+        window.history.back();
+      } else {
+        lastBackPressTimeRef.current = now;
+        try {
+          window.history.pushState({ tulipRoot: true, step: 1 }, '');
+        } catch (e) {
+          console.error(e);
+        }
+        setBackExitPrompt(true);
+        setTimeout(() => {
+          setBackExitPrompt(false);
+        }, 2200);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Rapid store entry: default directly to showroom on first visit without blocking modal
   useEffect(() => {
@@ -1745,6 +1968,10 @@ export default function App() {
     setSortOption('default');
     setShowOnlyFavorites(false);
     setShowOnlyTopSellers(false);
+    setCurrentPage(1);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   // 7. Customer Authentication & Application Handlers
@@ -2378,6 +2605,20 @@ export default function App() {
         <div className="fixed bottom-5 right-5 z-50 bg-emerald-700 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-semibold animate-bounce">
           <CheckCircle2 className="w-5 h-5 text-emerald-200" />
           <span>{syncToastMessage}</span>
+        </div>
+      )}
+
+      {/* Mobile Back Button Exit Confirmation Toast */}
+      {backExitPrompt && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-950/92 text-white px-4 py-2.5 rounded-full shadow-2xl border border-white/20 text-xs font-semibold backdrop-blur-md flex items-center gap-2 pointer-events-none animate-in fade-in duration-150">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+          <span>
+            {currentLang === 'ar'
+              ? 'اضغط مرة أخرى للرجوع أو الخروج من الصفحة'
+              : currentLang === 'en'
+              ? 'Press back again to exit'
+              : 'Appuyez à nouveau pour quitter'}
+          </span>
         </div>
       )}
 

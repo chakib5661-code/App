@@ -64,22 +64,29 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
   // Filters
   const [search, setSearch] = useState('');
 
-  // Automatically scroll to top of list when search changes in QuickOrderView
-  useEffect(() => {
-    if (!search) return;
-    const timeout = setTimeout(() => {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 600);
-    return () => clearTimeout(timeout);
-  }, [search]);
   const [localFamily, setLocalFamily] = useState<ProductFamily | 'all'>('all');
   const [inStockOnly, setInStockOnly] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [topSellersOnly, setTopSellersOnly] = useState(false);
 
-  const topSellersCount = useMemo(() => products.filter(isProductTopSeller).length, [products]);
-
   const activeFamily = propFamily !== undefined ? propFamily : localFamily;
+
+  // Automatically scroll back to top of list when any filter or search changes in QuickOrderView
+  const isFirstQuickOrderMount = React.useRef(true);
+  useEffect(() => {
+    if (isFirstQuickOrderMount.current) {
+      isFirstQuickOrderMount.current = false;
+      return;
+    }
+    const timeout = setTimeout(() => {
+      if (typeof window !== 'undefined' && window.scrollY > 40) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 120);
+    return () => clearTimeout(timeout);
+  }, [search, activeFamily, inStockOnly, favoritesOnly, topSellersOnly]);
+
+  const topSellersCount = useMemo(() => products.filter(isProductTopSeller).length, [products]);
   const handleSelectFamily = (fam: ProductFamily | 'all') => {
     if (propOnSelectFamily) {
       propOnSelectFamily(fam);

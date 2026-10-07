@@ -185,6 +185,27 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose, isLightboxOpen]);
 
+  // Handle phone navigation back button specifically for fullscreen lightbox
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+    try {
+      window.history.pushState({ tulipLightbox: true }, '');
+    } catch (e) {
+      console.error(e);
+    }
+
+    const handlePopState = () => {
+      setIsLightboxOpen(false);
+      setLightboxZoom(1);
+      setPanPosition({ x: 0, y: 0 });
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [isLightboxOpen]);
+
   if (!product || !localized) return null;
 
   const hasDiscount = Boolean(product.discountPercent && product.discountPercent > 0);
@@ -260,7 +281,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 20, scale: 0.98 }}
           transition={{ type: 'spring', damping: 28, stiffness: 350 }}
-          className="bg-white rounded-t-[28px] sm:rounded-3xl shadow-2xl max-w-xl md:max-w-2xl lg:max-w-3xl w-full max-h-[90dvh] sm:max-h-[85vh] flex flex-col md:flex-row overflow-hidden border border-slate-100 relative"
+          className="bg-white rounded-t-[28px] sm:rounded-3xl shadow-2xl max-w-xl md:max-w-3xl lg:max-w-4xl w-full max-h-[92dvh] sm:max-h-[90vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden border border-slate-100 relative"
           onClick={(e) => e.stopPropagation()}
           id="product-detail-modal-container"
         >
@@ -269,9 +290,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             <div className="w-10 h-1 rounded-full bg-slate-300/80 shadow-xs" />
           </div>
 
-          {/* Product Image: Tuned to mobile ratio with In-place Hover Zoom & Click to Open Fullscreen Lightbox */}
+          {/* Product Image: Full uncropped size adjusted to container with NO backdrop */}
           <div
-            className="w-full md:w-1/2 bg-slate-900/5 relative h-52 sm:h-60 md:h-auto md:min-h-[420px] shrink-0 overflow-hidden cursor-zoom-in group select-none"
+            className="w-full md:w-1/2 bg-white relative min-h-[260px] sm:min-h-[320px] md:min-h-[440px] max-h-[380px] md:max-h-[560px] flex items-center justify-center p-4 sm:p-6 shrink-0 overflow-hidden cursor-zoom-in group select-none border-b md:border-b-0 md:border-r border-slate-100"
             onMouseEnter={() => setIsHoveringImage(true)}
             onMouseLeave={() => setIsHoveringImage(false)}
             onMouseMove={handleMouseMoveImage}
@@ -289,10 +310,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=600')
               }
               alt={localized.name}
-              className="w-full h-full object-cover transition-transform duration-200 ease-out will-change-transform"
+              className="max-w-full max-h-full w-auto h-auto object-contain transition-transform duration-200 ease-out will-change-transform drop-shadow-sm"
               style={{
                 transformOrigin: `${mousePos.x}% ${mousePos.y}%`,
-                transform: isHoveringImage ? 'scale(2)' : 'scale(1)',
+                transform: isHoveringImage ? 'scale(1.8)' : 'scale(1)',
               }}
               referrerPolicy="no-referrer"
               onError={(e) => {
@@ -309,9 +330,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <span className="text-[11px] font-bold">Zoom HD</span>
               </span>
             </div>
-
-            {/* Top gradient shadow for button contrast on bright product photography */}
-            <div className="absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-slate-950/40 to-transparent pointer-events-none md:hidden" />
 
             {/* Badges: Family & Solde */}
             <div className={`absolute top-3 ${isRtl ? 'right-3' : 'left-3'} flex flex-col gap-1.5 items-start z-10`}>
@@ -347,16 +365,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               )}
             </div>
 
-            {/* Mobile Top Controls: Close & Favorite */}
+            {/* Mobile Top Controls: Close & Favorite with crisp contrast on white background */}
             <div className={`md:hidden absolute top-3 ${isRtl ? 'left-3' : 'right-3'} flex items-center gap-2 z-10`}>
               {onToggleFavorite && (
                 <button
                   type="button"
                   onClick={() => onToggleFavorite(product.id)}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md transition cursor-pointer shadow-md ${
+                  className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md transition cursor-pointer shadow-sm border ${
                     isFavorite
-                      ? 'bg-rose-500 text-white'
-                      : 'bg-slate-950/60 text-white hover:bg-slate-900'
+                      ? 'bg-rose-500 text-white border-rose-500'
+                      : 'bg-white/95 text-slate-500 hover:text-rose-600 border-slate-200/90'
                   }`}
                   title={isFavorite ? t.removeFromFavorites : t.addToFavorites}
                   aria-label={isFavorite ? t.removeFromFavorites : t.addToFavorites}
@@ -368,7 +386,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-950/60 text-white hover:bg-slate-900 transition cursor-pointer shadow-md"
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/95 text-slate-700 hover:text-slate-950 border border-slate-200/90 transition cursor-pointer shadow-sm"
                 aria-label="Fermer"
                 id="mobile-modal-close-btn"
               >
