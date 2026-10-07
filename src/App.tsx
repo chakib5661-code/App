@@ -2314,7 +2314,7 @@ export default function App() {
         onLogoutCustomer={handleLogoutCustomer}
         lang={currentLang}
         onSelectLanguage={handleSelectLanguage}
-        onOpenOrderTracking={() => setIsOrderTrackingOpen(true)}
+        onOpenOrderTracking={currentCustomer ? () => setIsOrderTrackingOpen(true) : undefined}
         currentInterface={currentInterface}
         onToggleInterface={handleSelectInterface}
         onOpenInterfaceChoiceModal={() => setIsInterfaceChoiceOpen(true)}
@@ -2841,17 +2841,19 @@ export default function App() {
                 <p className="text-rose-200/70 text-xs leading-relaxed">
                   Fournisseur professionnel de matières premières de parfumerie et flaconnage en Algérie.
                 </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    id="btn-customer-order-tracking-footer"
-                    onClick={() => setIsOrderTrackingOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#9f0e4e]/30 to-[#c2185b]/30 hover:opacity-95 text-rose-200 border border-[#c2185b]/50 text-xs font-semibold transition cursor-pointer shadow-xs"
-                  >
-                    <Truck className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Suivre mes Précommandes</span>
-                  </button>
-                </div>
+                {currentCustomer && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      id="btn-customer-order-tracking-footer"
+                      onClick={() => setIsOrderTrackingOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#9f0e4e]/30 to-[#c2185b]/30 hover:opacity-95 text-rose-200 border border-[#c2185b]/50 text-xs font-semibold transition cursor-pointer shadow-xs"
+                    >
+                      <Truck className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Suivre mes Précommandes</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Footer Language Selection */}
                 <div className="pt-2 border-t border-[#70083b]/40 flex items-center gap-2">

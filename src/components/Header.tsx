@@ -253,8 +253,8 @@ export const Header: React.FC<HeaderProps> = ({
             </>
           )}
 
-          {/* ORDER TRACKING BUTTON (Placed Next to Cart Button) */}
-          {onOpenOrderTracking && (
+          {/* ORDER TRACKING BUTTON (Strictly hidden for non logged-in users) */}
+          {Boolean(currentCustomer && onOpenOrderTracking) && (
             <button
               id="btn-header-track-order"
               type="button"
