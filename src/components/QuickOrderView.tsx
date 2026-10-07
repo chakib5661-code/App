@@ -408,7 +408,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                         height={64}
                         loading="lazy"
                         decoding="async"
-                        className="w-16 h-16 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200"
+                        className="w-16 h-16 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200 cursor-zoom-in hover:scale-105 active:scale-95 transition-transform"
                         referrerPolicy="no-referrer"
                         onError={(e) => {
                           const target = e.currentTarget as HTMLImageElement;
@@ -670,7 +670,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                                 height={48}
                                 loading="lazy"
                                 decoding="async"
-                                className="w-12 h-12 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200 cursor-pointer hover:opacity-80 transition"
+                                className="w-12 h-12 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200 cursor-zoom-in hover:scale-110 active:scale-95 transition-transform"
                                 referrerPolicy="no-referrer"
                                 onError={(e) => {
                                   const target = e.currentTarget as HTMLImageElement;

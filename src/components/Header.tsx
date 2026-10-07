@@ -110,8 +110,8 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Main Navbar */}
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-3">
         {/* Brand & Tulip Logo */}
-        <div className="flex items-center gap-3">
-          <TulipLogo variant="horizontal" size="md" theme="light" />
+        <div className="flex items-center gap-2">
+          <TulipLogo variant="horizontal" size="sm" theme="light" />
         </div>
 
         {/* Product Family Filter Navigation (Desktop only) */}
@@ -196,11 +196,16 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenCustomerAuth('login')}
-                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#70083b] to-[#9f0e4e] hover:from-[#880e4f] hover:to-[#be185d] text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md hover:scale-105 active:scale-95 ring-2 ring-pink-500/30"
+                    className="relative px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:from-[#880e4f] hover:to-[#be185d] text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md hover:scale-105 active:scale-95 ring-2 ring-rose-400/60 sm:ring-pink-500/30 shrink-0"
                     title={t.loginBtn}
                   >
-                    <Lock className="w-3.5 h-3.5 text-pink-200 animate-pulse shrink-0" />
-                    <span>{t.loginBtn}</span>
+                    {/* Glowing notice indicator dot on mobile */}
+                    <span className="relative flex h-2 w-2 sm:hidden">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-300 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
+                    </span>
+                    <Lock className="w-3.5 h-3.5 text-amber-200 shrink-0" />
+                    <span className="whitespace-nowrap font-black">{t.loginBtn}</span>
                   </button>
 
                   <button
