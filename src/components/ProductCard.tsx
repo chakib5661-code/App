@@ -117,7 +117,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
     <div
       id={`product-card-${product.id}`}
       dir={isRtl ? 'rtl' : 'ltr'}
-      className="product-card-wrapper bg-white rounded-2xl border border-rose-100/90 shadow-2xs hover:border-rose-300 hover:shadow-xl hover:shadow-rose-950/5 transition-all duration-300 overflow-hidden flex flex-col justify-between"
+      className="bg-white rounded-2xl border border-rose-100/90 shadow-2xs hover:border-rose-300 hover:shadow-xl hover:shadow-rose-950/5 transition-all duration-300 overflow-hidden flex flex-col justify-between"
     >
       {/* Product Image & Badges */}
       <div
@@ -139,7 +139,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
           alt={localized.name}
           width={300}
           height={192}
-          className="w-full h-full object-cover group-hover:scale-120 transition-transform duration-500 ease-out"
+          className="w-full h-full object-cover group-hover:scale-120 transition-transform duration-500 ease-out will-change-transform"
           loading={isPriority ? 'eager' : 'lazy'}
           fetchPriority={isPriority ? 'high' : 'auto'}
           decoding="async"

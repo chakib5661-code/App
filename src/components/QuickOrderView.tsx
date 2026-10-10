@@ -99,24 +99,6 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
   const [rowQuantities, setRowQuantities] = useState<Record<string, number>>({});
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
 
-  // Responsive device viewport check to prevent double rendering of DOM (cards + table)
-  const [isDesktop, setIsDesktop] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 768 : false
-  );
-
-  useEffect(() => {
-    const onResize = () => setIsDesktop(window.innerWidth >= 768);
-    window.addEventListener('resize', onResize, { passive: true });
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  // Progressive batch loading for mobile devices to prevent RAM exhaustion on low-memory phones
-  const [mobileBatchLimit, setMobileBatchLimit] = useState(35);
-
-  useEffect(() => {
-    setMobileBatchLimit(35);
-  }, [search, activeFamily, inStockOnly, favoritesOnly, topSellersOnly]);
-
   // Fast cart lookup
   const cartMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -144,10 +126,6 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       return true;
     });
   }, [products, activeFamily, inStockOnly, search, lang, favoritesOnly, favorites, topSellersOnly]);
-
-  const displayedMobileProducts = useMemo(() => {
-    return filteredProducts.slice(0, mobileBatchLimit);
-  }, [filteredProducts, mobileBatchLimit]);
 
   const getRowQty = (product: Product) => {
     if (rowQuantities[product.id] !== undefined) {
@@ -399,10 +377,11 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
               {lang === 'ar' ? 'إعادة ضبط الفلاتر' : 'Réinitialiser les filtres'}
             </button>
           </div>
-        ) : !isDesktop ? (
-          /* MOBILE LAYOUT: Phone Screen Friendly Card List (Optimized for low RAM) */
-          <div className="space-y-3">
-            {displayedMobileProducts.map((product) => {
+        ) : (
+          <>
+            {/* MOBILE LAYOUT: Phone Screen Friendly Card List (Fixed Overflow) */}
+            <div className="md:hidden space-y-3">
+              {filteredProducts.map((product) => {
                 const isExtrait = product.family === 'Extrait';
                 const localized = getProductLocalizedDetails(product, lang);
                 const cartQty = cartMap[product.id] || 0;
@@ -637,25 +616,10 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                   </div>
                 );
               })}
-
-              {/* Load more cards for mobile if there are remaining products */}
-              {filteredProducts.length > mobileBatchLimit && (
-                <div className="pt-2 pb-4 text-center">
-                  <button
-                    type="button"
-                    onClick={() => setMobileBatchLimit((prev) => prev + 35)}
-                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white text-xs font-black transition shadow-md active:scale-98 cursor-pointer"
-                  >
-                    {lang === 'ar'
-                      ? `عرض المزيد من المنتجات (+35) • متبقي ${filteredProducts.length - mobileBatchLimit}`
-                      : `Afficher plus de produits (+35) • ${filteredProducts.length - mobileBatchLimit} restants`}
-                  </button>
-                </div>
-              )}
             </div>
-          ) : (
-            /* DESKTOP TABLE: Full High-Density Grid */
-            <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
+
+            {/* DESKTOP TABLE: Full High-Density Grid */}
+            <div className="hidden md:block bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -988,6 +952,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                 </table>
               </div>
             </div>
+          </>
         )}
       </div>
     </div>

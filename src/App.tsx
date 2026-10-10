@@ -1631,27 +1631,14 @@ export default function App() {
     setCurrentPage(1);
   }, [selectedFamily, searchQuery, stockFilter, sortOption, showOnlyFavorites, showOnlyTopSellers]);
 
-  // Responsive Products Per Page: 20 on mobile to conserve memory/RAM, 36 on desktop
-  const isMobileScreen = typeof window !== 'undefined' && window.innerWidth < 768;
-  const productsPerPage = isMobileScreen ? 20 : 36;
-
+  // Paginated Products (50 per page to optimize DOM rendering & browser scrolling)
+  const productsPerPage = 50;
   const paginatedProducts = useMemo(() => {
     const startIndex = (currentPage - 1) * productsPerPage;
     return filteredProducts.slice(startIndex, startIndex + productsPerPage);
-  }, [filteredProducts, currentPage, productsPerPage]);
+  }, [filteredProducts, currentPage]);
 
   const totalPages = Math.ceil(filteredProducts.length / productsPerPage);
-
-  // Fast O(1) Cart Lookup Map to prevent O(N*M) array find on each card render
-  const showroomCartMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const item of cart) {
-      if (item?.product?.id) {
-        map[item.product.id] = item.quantity;
-      }
-    }
-    return map;
-  }, [cart]);
 
   // Cart operations
   const cartCount = useMemo(() => cart.reduce((s, i) => s + (i?.quantity || 0), 0), [cart]);
@@ -1666,7 +1653,7 @@ export default function App() {
     [cart]
   );
 
-  const handleAddToCart = useCallback((product: Product, quantityToAdd: number) => {
+  const handleAddToCart = (product: Product, quantityToAdd: number) => {
     if (!product || !product.id) return;
     setCart((prev) => {
       const existing = prev.find((item) => item?.product?.id === product.id);
@@ -1679,9 +1666,9 @@ export default function App() {
         return [...prev, { product, quantity: Math.min(product.stock, quantityToAdd) }];
       }
     });
-  }, []);
+  };
 
-  const handleDecreaseCartQuantity = useCallback((productId: string, quantityToDecrease: number) => {
+  const handleDecreaseCartQuantity = (productId: string, quantityToDecrease: number) => {
     setCart((prev) => {
       const existing = prev.find((item) => item?.product?.id === productId);
       if (!existing) return prev;
@@ -1693,7 +1680,7 @@ export default function App() {
         item?.product?.id === productId ? { ...item, quantity: newQty } : item
       );
     });
-  }, []);
+  };
 
   const handleUpdateCartQuantity = (productId: string, newQty: number) => {
     if (newQty <= 0) {
@@ -2862,7 +2849,8 @@ export default function App() {
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {paginatedProducts.map((product, idx) => {
-                const cartQuantity = showroomCartMap[product.id] || 0;
+                const inCartItem = cart.find((i) => i.product.id === product.id);
+                const cartQuantity = inCartItem ? inCartItem.quantity : 0;
 
                 return (
                   <ProductCard
