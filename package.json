@@ -8,8 +8,7 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/server/vercelEntry.ts --bundle --platform=node --format=esm --packages=external --sourcemap --outfile=api/index.js",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit",
-    "compress-blob": "tsx scripts/compress-blob-images.ts"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",

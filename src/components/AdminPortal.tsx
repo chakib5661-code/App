@@ -43,8 +43,6 @@ import {
   Image as ImageIcon,
   ExternalLink,
   FolderOpen,
-  Upload,
-  AlertTriangle,
 } from 'lucide-react';
 import { Product, PreOrder, StoreSettings, AdminUser, CustomerApplication, CustomerUser, AdBanner, ManagerPermissions } from '../types';
 import { downloadOrderPDF, printOrderPDF, formatDZD } from '../utils/pdfGenerator';
@@ -72,9 +70,6 @@ import {
   syncExtraitImagesFromBlob,
   listExtraitImagesFromBlob,
   BlobExtraitSyncResult,
-  compressAndMoveExtraitImagesFromBlob,
-  uploadAndCompressExtraitImage,
-  BlobCompressResult,
 } from '../utils/api';
 import {
   getClientSupabaseCredentials,
@@ -267,102 +262,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [blobFilesList, setBlobFilesList] = useState<Array<{ pathname: string; url: string; filename: string; referenceCandidate: string; size: number }>>([]);
   const [isLoadingBlobFiles, setIsLoadingBlobFiles] = useState(false);
   const [blobFolderSaveNotice, setBlobFolderSaveNotice] = useState<string | null>(null);
-
-  // Vercel Blob Extrait Images Compression States
-  const [blobSourceFolder, setBlobSourceFolder] = useState('extraits-raw');
-  const [blobDeleteSourceAfter, setBlobDeleteSourceAfter] = useState(false);
-  const [isCompressingBlobImages, setIsCompressingBlobImages] = useState(false);
-  const [blobCompressResult, setBlobCompressResult] = useState<BlobCompressResult | null>(null);
-  const [isDirectUploading, setIsDirectUploading] = useState(false);
-  const [directUploadNotice, setDirectUploadNotice] = useState<string | null>(null);
-
-  const handleCompressAndMoveBlobImages = async () => {
-    setIsCompressingBlobImages(true);
-    setBlobCompressResult(null);
-    try {
-      const res = await compressAndMoveExtraitImagesFromBlob({
-        sourceFolder: blobSourceFolder.trim() || 'extraits-raw',
-        targetFolder: blobFolderName.trim() || 'extraits',
-        deleteSourceAfter: blobDeleteSourceAfter,
-        maxDimension: 1200,
-        quality: 82,
-      });
-      setBlobCompressResult(res);
-      // Automatically refresh catalog products if any were updated
-      if (res.success && res.matchedProductsCount > 0) {
-        const syncRes = await syncExtraitImagesFromBlob({
-          folderName: blobFolderName.trim() || 'extraits',
-          products,
-          saveToDatabase: true,
-        });
-        if (syncRes.success && syncRes.products) {
-          onUpdateProducts(syncRes.products);
-        }
-      }
-    } catch (err: any) {
-      setBlobCompressResult({
-        success: false,
-        processedCount: 0,
-        totalOriginalBytes: 0,
-        totalCompressedBytes: 0,
-        savedBytes: 0,
-        overallSavedPercent: 0,
-        matchedProductsCount: 0,
-        sourceFolder: blobSourceFolder,
-        targetFolder: blobFolderName,
-        error: err?.message || 'Erreur lors de la compression.',
-      });
-    } finally {
-      setIsCompressingBlobImages(false);
-    }
-  };
-
-  const handleDirectFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    setIsDirectUploading(true);
-    setDirectUploadNotice(null);
-
-    let successCount = 0;
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const base64Data = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-
-        const res = await uploadAndCompressExtraitImage({
-          fileName: file.name,
-          base64Data,
-          folderName: blobFolderName.trim() || 'extraits',
-        });
-
-        if (res.success) {
-          successCount++;
-        }
-      }
-
-      setDirectUploadNotice(`✅ ${successCount} image(s) compressée(s) et envoyée(s) avec succès dans Vercel Blob !`);
-      // Refresh matching
-      const syncRes = await syncExtraitImagesFromBlob({
-        folderName: blobFolderName.trim() || 'extraits',
-        products,
-        saveToDatabase: true,
-      });
-      if (syncRes.success && syncRes.products) {
-        onUpdateProducts(syncRes.products);
-      }
-    } catch (err: any) {
-      setDirectUploadNotice(`❌ Erreur: ${err?.message || 'Échec du téléversement.'}`);
-    } finally {
-      setIsDirectUploading(false);
-      e.target.value = '';
-    }
-  };
 
   const handleSyncBlobImages = async () => {
     setIsSyncingBlobImages(true);
@@ -3286,147 +3185,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <div className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>{blobFolderSaveNotice}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Compression & Transfer Pipeline Card */}
-              <div className="p-4 rounded-xl bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950/20 border border-amber-500/30 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    <span className="font-bold text-white text-xs">
-                      Compression & Déplacement Automatique (WebP HD)
-                    </span>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/80 font-mono">
-                    Moteur Sharp
-                  </span>
-                </div>
-
-                <p className="text-[11px] text-slate-300 leading-relaxed">
-                  Déposez vos photos brutes dans un dossier temporaire sur Vercel Blob (ex: <code className="text-amber-300 font-mono">extraits-raw</code> ou <code className="text-amber-300 font-mono">blob extrait images before compress</code>). Ce module télécharge chaque photo, la compresse en WebP HD (réduction de 85 à 95% du poids), la déplace vers le dossier officiel <code className="text-sky-300 font-mono">{blobFolderName || 'extraits'}</code> et la relie au catalogue.
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-300 block mb-1">
-                      Dossier Source (Photos brutes / avant compression) :
-                    </label>
-                    <input
-                      type="text"
-                      value={blobSourceFolder}
-                      onChange={(e) => setBlobSourceFolder(e.target.value)}
-                      placeholder="extraits-raw"
-                      className="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-hidden focus:ring-1 focus:ring-amber-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-300 block mb-1">
-                      Dossier Cible (Photos compressées) :
-                    </label>
-                    <input
-                      type="text"
-                      value={blobFolderName}
-                      disabled
-                      className="w-full px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-400 font-mono text-xs cursor-not-allowed"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="checkbox"
-                    id="chk-delete-source"
-                    checked={blobDeleteSourceAfter}
-                    onChange={(e) => setBlobDeleteSourceAfter(e.target.checked)}
-                    className="rounded border-slate-700 text-amber-500 focus:ring-0 cursor-pointer"
-                  />
-                  <label htmlFor="chk-delete-source" className="text-[11px] text-slate-300 cursor-pointer">
-                    Supprimer les photos brutes d'origine après compression pour libérer de l'espace Vercel Blob
-                  </label>
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={handleCompressAndMoveBlobImages}
-                    disabled={isCompressingBlobImages}
-                    className="flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-amber-950/40 cursor-pointer disabled:opacity-50 text-xs"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isCompressingBlobImages ? 'animate-spin' : ''}`} />
-                    <span>
-                      {isCompressingBlobImages
-                        ? 'Compression et transfert en cours...'
-                        : `🗜️ Compresser & Déplacer vers "${blobFolderName || 'extraits'}"`}
-                    </span>
-                  </button>
-
-                  <label className="py-2.5 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer text-xs">
-                    <Upload className="w-3.5 h-3.5 text-sky-400" />
-                    <span>{isDirectUploading ? 'Envoi...' : 'Téléverser & Compresser depuis PC'}</span>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={handleDirectFileUpload}
-                      disabled={isDirectUploading}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-
-                {directUploadNotice && (
-                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-200">
-                    {directUploadNotice}
-                  </div>
-                )}
-
-                {/* Compression Result Banner */}
-                {blobCompressResult && (
-                  <div
-                    className={`p-3 rounded-xl border text-xs space-y-1.5 ${
-                      blobCompressResult.success
-                        ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-                        : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
-                    }`}
-                  >
-                    <div className="font-bold flex items-center gap-1.5">
-                      {blobCompressResult.success ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                          <span>Rapport de compression réussi</span>
-                        </>
-                      ) : (
-                        <>
-                          <AlertTriangle className="w-4 h-4 text-rose-400" />
-                          <span>Notice de compression</span>
-                        </>
-                      )}
-                    </div>
-                    {blobCompressResult.message && <p>{blobCompressResult.message}</p>}
-                    {blobCompressResult.error && <p className="text-rose-300">{blobCompressResult.error}</p>}
-
-                    {blobCompressResult.processedCount > 0 && (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
-                        <div className="p-2 bg-slate-900/80 rounded-lg border border-slate-800">
-                          <span className="text-slate-400 block text-[10px]">Photos</span>
-                          <span className="font-bold text-white">{blobCompressResult.processedCount}</span>
-                        </div>
-                        <div className="p-2 bg-slate-900/80 rounded-lg border border-slate-800">
-                          <span className="text-slate-400 block text-[10px]">Poids initial</span>
-                          <span className="font-bold text-white">{(blobCompressResult.totalOriginalBytes / (1024 * 1024)).toFixed(1)} Mo</span>
-                        </div>
-                        <div className="p-2 bg-slate-900/80 rounded-lg border border-slate-800">
-                          <span className="text-slate-400 block text-[10px]">Poids WebP</span>
-                          <span className="font-bold text-emerald-400">{(blobCompressResult.totalCompressedBytes / (1024 * 1024)).toFixed(1)} Mo</span>
-                        </div>
-                        <div className="p-2 bg-slate-900/80 rounded-lg border border-slate-800">
-                          <span className="text-slate-400 block text-[10px]">Économie</span>
-                          <span className="font-bold text-emerald-300">-{blobCompressResult.overallSavedPercent}%</span>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
