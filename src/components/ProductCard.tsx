@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Minus, Check, Sparkles, Layers, Wrench, Package, Lock, XCircle, Heart, Flame } from 'lucide-react';
+import { Plus, Minus, Check, Sparkles, Layers, Wrench, Package, Lock, XCircle, Heart, Flame, ZoomIn } from 'lucide-react';
 import { Product } from '../types';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { isProductTopSeller, calculateDiscountedPrice } from '../utils/productUtils';
@@ -11,15 +11,16 @@ interface ProductCardProps {
   cartQuantity: number;
   onAddToCart: (product: Product, quantity: number) => void;
   onDecreaseCartQuantity?: (productId: string, quantityToDecrease: number) => void;
-  onQuickView?: (product: Product) => void;
+  onQuickView?: (product: Product, openFullImage?: boolean) => void;
   isPricesVisible?: boolean;
   onRequireLogin?: () => void;
   lang?: AppLanguage;
   isFavorite?: boolean;
   onToggleFavorite?: (productId: string) => void;
+  isPriority?: boolean;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({
+const ProductCardComponent: React.FC<ProductCardProps> = ({
   product,
   cartQuantity,
   onAddToCart,
@@ -30,6 +31,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   lang = 'ar',
   isFavorite = false,
   onToggleFavorite,
+  isPriority = false,
 }) => {
   const t = translations[lang];
   const isExtrait = product.family === 'Extrait';
@@ -115,10 +117,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     <div
       id={`product-card-${product.id}`}
       dir={isRtl ? 'rtl' : 'ltr'}
-      className="bg-white rounded-2xl border border-rose-100/90 shadow-2xs hover:border-rose-300 hover:shadow-xl hover:shadow-rose-950/5 transition-all duration-300 overflow-hidden flex flex-col justify-between"
+      className="product-card-wrapper bg-white rounded-2xl border border-rose-100/90 shadow-2xs hover:border-rose-300 hover:shadow-xl hover:shadow-rose-950/5 transition-all duration-300 overflow-hidden flex flex-col justify-between"
     >
       {/* Product Image & Badges */}
-      <div className="relative h-48 bg-slate-100 overflow-hidden group">
+      <div
+        onClick={() => {
+          const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+          onQuickView?.(product, isMobile);
+        }}
+        className="relative h-48 bg-slate-100 overflow-hidden group cursor-zoom-in"
+        title="Cliquer pour afficher la photo en grand format et zoomer"
+      >
         <img
           src={
             product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
@@ -128,8 +137,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=600')
           }
           alt={localized.name}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          loading="lazy"
+          width={300}
+          height={192}
+          className="w-full h-full object-cover group-hover:scale-120 transition-transform duration-500 ease-out"
+          loading={isPriority ? 'eager' : 'lazy'}
+          fetchPriority={isPriority ? 'high' : 'auto'}
           decoding="async"
           referrerPolicy="no-referrer"
           onError={(e) => {
@@ -138,6 +150,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             target.src = '/tulip-extrait-default.jpg';
           }}
         />
+
+        {/* Quick Zoom Indicator on hover */}
+        <div className="absolute bottom-2.5 right-2.5 z-10 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none transform translate-y-1 group-hover:translate-y-0">
+          <span className="px-2.5 py-1 rounded-xl bg-slate-950/80 text-white text-[10px] font-bold backdrop-blur-xs flex items-center gap-1.5 shadow-md border border-white/20">
+            <ZoomIn className="w-3.5 h-3.5 text-pink-300" />
+            <span>Zoom HD</span>
+          </span>
+        </div>
 
         {/* Top Badges: Family & Big Solde Sticker */}
         <div className={`absolute top-2.5 ${isRtl ? 'right-2.5' : 'left-2.5'} flex flex-col gap-1.5 items-start z-10`}>
@@ -288,7 +308,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <button
                 type="button"
                 onClick={onRequireLogin}
-                className="text-xs font-bold text-amber-800 hover:text-amber-950 hover:underline cursor-pointer"
+                className="px-3 py-1 rounded-lg bg-[#9f0e4e] hover:bg-[#880e4f] text-white text-[11px] font-black shadow-sm transition active:scale-95 cursor-pointer shrink-0"
               >
                 {t.loginBtn}
               </button>
@@ -471,3 +491,5 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     </div>
   );
 };
+
+export const ProductCard = React.memo(ProductCardComponent);

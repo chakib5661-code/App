@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Layers, Wrench, Package, MapPin, Check, Plus, Minus, XCircle, ShieldCheck, Lock, Heart } from 'lucide-react';
+import { X, Sparkles, Layers, Wrench, Package, MapPin, Check, Plus, Minus, XCircle, ShieldCheck, Lock, Heart, ZoomIn, ZoomOut, RotateCcw, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Product } from '../types';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { calculateDiscountedPrice } from '../utils/productUtils';
@@ -39,6 +39,117 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [selectedQty, setSelectedQty] = useState(defaultInitialQty);
   const [qtyInputValue, setQtyInputValue] = useState(String(defaultInitialQty));
 
+  // Zoom & Lightbox State
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const [lightboxZoom, setLightboxZoom] = useState(1);
+  const [panPosition, setPanPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [touchStartDist, setTouchStartDist] = useState<number | null>(null);
+  const [touchStartZoom, setTouchStartZoom] = useState(1);
+  const [lastTapTime, setLastTapTime] = useState(0);
+
+  // In-place hover zoom position on card
+  const [isHoveringImage, setIsHoveringImage] = useState(false);
+  const [mousePos, setMousePos] = useState({ x: 50, y: 50 });
+
+  const handleMouseMoveImage = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setMousePos({ x, y });
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (lightboxZoom <= 1) return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - panPosition.x, y: e.clientY - panPosition.y });
+  };
+
+  const handleMouseMoveLightbox = (e: React.MouseEvent) => {
+    if (!isDragging || lightboxZoom <= 1) return;
+    setPanPosition({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y,
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    if (e.deltaY < 0) {
+      setLightboxZoom((prev) => Math.min(4, Number((prev + 0.25).toFixed(2))));
+    } else {
+      setLightboxZoom((prev) => {
+        const next = Math.max(1, Number((prev - 0.25).toFixed(2)));
+        if (next === 1) setPanPosition({ x: 0, y: 0 });
+        return next;
+      });
+    }
+  };
+
+  const handleDoubleClick = () => {
+    if (lightboxZoom > 1.2) {
+      setLightboxZoom(1);
+      setPanPosition({ x: 0, y: 0 });
+    } else {
+      setLightboxZoom(2.5);
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      setTouchStartDist(dist);
+      setTouchStartZoom(lightboxZoom);
+    } else if (e.touches.length === 1) {
+      const now = Date.now();
+      if (now - lastTapTime < 300) {
+        if (lightboxZoom > 1.2) {
+          setLightboxZoom(1);
+          setPanPosition({ x: 0, y: 0 });
+        } else {
+          setLightboxZoom(2.5);
+        }
+        setLastTapTime(0);
+        return;
+      }
+      setLastTapTime(now);
+      if (lightboxZoom > 1) {
+        setIsDragging(true);
+        setDragStart({ x: e.touches[0].clientX - panPosition.x, y: e.touches[0].clientY - panPosition.y });
+      }
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchStartDist !== null) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const ratio = dist / touchStartDist;
+      const newZoom = Math.min(4, Math.max(1, Number((touchStartZoom * ratio).toFixed(2))));
+      setLightboxZoom(newZoom);
+    } else if (e.touches.length === 1 && isDragging && lightboxZoom > 1) {
+      setPanPosition({
+        x: e.touches[0].clientX - dragStart.x,
+        y: e.touches[0].clientY - dragStart.y,
+      });
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setTouchStartDist(null);
+    setIsDragging(false);
+  };
+
   useEffect(() => {
     if (product) {
       const isExt = product.family === 'Extrait';
@@ -49,14 +160,51 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     }
   }, [product, cartQuantity]);
 
-  // Handle escape key to dismiss modal
+  // Reset zoom and lightbox when product changes
+  useEffect(() => {
+    setIsLightboxOpen(false);
+    setLightboxZoom(1);
+    setPanPosition({ x: 0, y: 0 });
+    setIsHoveringImage(false);
+  }, [product?.id]);
+
+  // Handle escape key to dismiss lightbox first, or modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (isLightboxOpen) {
+          setIsLightboxOpen(false);
+          setLightboxZoom(1);
+          setPanPosition({ x: 0, y: 0 });
+        } else {
+          onClose();
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, isLightboxOpen]);
+
+  // Handle phone navigation back button specifically for fullscreen lightbox
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+    try {
+      window.history.pushState({ tulipLightbox: true }, '');
+    } catch (e) {
+      console.error(e);
+    }
+
+    const handlePopState = () => {
+      setIsLightboxOpen(false);
+      setLightboxZoom(1);
+      setPanPosition({ x: 0, y: 0 });
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [isLightboxOpen]);
 
   if (!product || !localized) return null;
 
@@ -133,7 +281,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 20, scale: 0.98 }}
           transition={{ type: 'spring', damping: 28, stiffness: 350 }}
-          className="bg-white rounded-t-[28px] sm:rounded-3xl shadow-2xl max-w-xl md:max-w-2xl lg:max-w-3xl w-full max-h-[90dvh] sm:max-h-[85vh] flex flex-col md:flex-row overflow-hidden border border-slate-100 relative"
+          className="bg-white rounded-t-[28px] sm:rounded-3xl shadow-2xl max-w-xl md:max-w-3xl lg:max-w-4xl w-full max-h-[92dvh] sm:max-h-[90vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden border border-slate-100 relative"
           onClick={(e) => e.stopPropagation()}
           id="product-detail-modal-container"
         >
@@ -142,8 +290,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             <div className="w-10 h-1 rounded-full bg-slate-300/80 shadow-xs" />
           </div>
 
-          {/* Product Image: Tuned to mobile ratio (h-48 on mobile, aspect-[16/10] safe framing) */}
-          <div className="w-full md:w-1/2 bg-slate-100 relative h-48 sm:h-56 md:h-auto md:min-h-[420px] shrink-0 overflow-hidden">
+          {/* Product Image: Full uncropped size adjusted to container with NO backdrop */}
+          <div
+            className="w-full md:w-1/2 bg-white relative min-h-[260px] sm:min-h-[320px] md:min-h-[440px] max-h-[380px] md:max-h-[560px] flex items-center justify-center p-4 sm:p-6 shrink-0 overflow-hidden cursor-zoom-in group select-none border-b md:border-b-0 md:border-r border-slate-100"
+            onMouseEnter={() => setIsHoveringImage(true)}
+            onMouseLeave={() => setIsHoveringImage(false)}
+            onMouseMove={handleMouseMoveImage}
+            onClick={() => setIsLightboxOpen(true)}
+            title="Cliquer pour agrandir et zoomer en plein écran"
+          >
             <img
               src={
                 product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
@@ -155,7 +310,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=600')
               }
               alt={localized.name}
-              className="w-full h-full object-cover"
+              className="max-w-full max-h-full w-auto h-auto object-contain transition-transform duration-200 ease-out will-change-transform drop-shadow-sm"
+              style={{
+                transformOrigin: `${mousePos.x}% ${mousePos.y}%`,
+                transform: isHoveringImage ? 'scale(1.8)' : 'scale(1)',
+              }}
               referrerPolicy="no-referrer"
               onError={(e) => {
                 const target = e.currentTarget as HTMLImageElement;
@@ -163,8 +322,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 target.src = '/tulip-extrait-default.jpg';
               }}
             />
-            {/* Top gradient shadow for button contrast on bright product photography */}
-            <div className="absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-slate-950/40 to-transparent pointer-events-none md:hidden" />
+
+            {/* Floating Zoom HD Badge */}
+            <div className="absolute bottom-3 right-3 z-20 pointer-events-none">
+              <span className="px-2.5 py-1.5 rounded-xl bg-slate-950/80 text-white text-xs font-bold backdrop-blur-md flex items-center gap-1.5 shadow-lg border border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:bg-[#70083b]/90">
+                <ZoomIn className="w-3.5 h-3.5 text-pink-300" />
+                <span className="text-[11px] font-bold">Zoom HD</span>
+              </span>
+            </div>
 
             {/* Badges: Family & Solde */}
             <div className={`absolute top-3 ${isRtl ? 'right-3' : 'left-3'} flex flex-col gap-1.5 items-start z-10`}>
@@ -200,16 +365,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               )}
             </div>
 
-            {/* Mobile Top Controls: Close & Favorite */}
+            {/* Mobile Top Controls: Close & Favorite with crisp contrast on white background */}
             <div className={`md:hidden absolute top-3 ${isRtl ? 'left-3' : 'right-3'} flex items-center gap-2 z-10`}>
               {onToggleFavorite && (
                 <button
                   type="button"
                   onClick={() => onToggleFavorite(product.id)}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md transition cursor-pointer shadow-md ${
+                  className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md transition cursor-pointer shadow-sm border ${
                     isFavorite
-                      ? 'bg-rose-500 text-white'
-                      : 'bg-slate-950/60 text-white hover:bg-slate-900'
+                      ? 'bg-rose-500 text-white border-rose-500'
+                      : 'bg-white/95 text-slate-500 hover:text-rose-600 border-slate-200/90'
                   }`}
                   title={isFavorite ? t.removeFromFavorites : t.addToFavorites}
                   aria-label={isFavorite ? t.removeFromFavorites : t.addToFavorites}
@@ -221,7 +386,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-950/60 text-white hover:bg-slate-900 transition cursor-pointer shadow-md"
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/95 text-slate-700 hover:text-slate-950 border border-slate-200/90 transition cursor-pointer shadow-sm"
                 aria-label="Fermer"
                 id="mobile-modal-close-btn"
               >
@@ -497,6 +662,152 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             </div>
           </div>
         </motion.div>
+
+        {/* Fullscreen HD Zoom Lightbox */}
+        {isLightboxOpen && (
+          <div
+            className="fixed inset-0 z-[70] bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-3 sm:p-6 select-none"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setIsLightboxOpen(false);
+                setLightboxZoom(1);
+                setPanPosition({ x: 0, y: 0 });
+              }
+            }}
+            id="product-lightbox-modal"
+          >
+            {/* Top Toolbar */}
+            <div className="flex items-center justify-between gap-3 w-full max-w-4xl mx-auto z-20 bg-slate-900/85 border border-white/15 rounded-2xl px-4 py-2.5 backdrop-blur-md shadow-2xl">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-mono text-[11px] sm:text-xs bg-white/10 text-pink-300 px-2 py-0.5 rounded font-bold">
+                  {product.code}
+                </span>
+                <span className="text-white text-xs sm:text-sm font-bold truncate max-w-[160px] sm:max-w-md">
+                  {localized.name}
+                </span>
+              </div>
+
+              {/* Zoom Controls */}
+              <div className="flex items-center gap-1 sm:gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLightboxZoom((prev) => {
+                      const next = Math.max(1, Number((prev - 0.5).toFixed(1)));
+                      if (next === 1) setPanPosition({ x: 0, y: 0 });
+                      return next;
+                    });
+                  }}
+                  disabled={lightboxZoom <= 1}
+                  className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white transition cursor-pointer"
+                  title="Dézoomer"
+                  aria-label="Dézoomer"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+
+                <span className="text-xs font-mono font-bold text-pink-200 px-2 py-1 bg-white/10 rounded-lg min-w-[50px] text-center">
+                  {Math.round(lightboxZoom * 100)}%
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLightboxZoom((prev) => Math.min(4, Number((prev + 0.5).toFixed(1))));
+                  }}
+                  disabled={lightboxZoom >= 4}
+                  className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white transition cursor-pointer"
+                  title="Zoomer"
+                  aria-label="Zoomer"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLightboxZoom(1);
+                    setPanPosition({ x: 0, y: 0 });
+                  }}
+                  className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+                  title="Réinitialiser le zoom (100%)"
+                  aria-label="Réinitialiser le zoom"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsLightboxOpen(false);
+                    setLightboxZoom(1);
+                    setPanPosition({ x: 0, y: 0 });
+                  }}
+                  className="p-1.5 sm:p-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition cursor-pointer ml-1 sm:ml-2 shadow-md"
+                  title="Fermer le zoom"
+                  aria-label="Fermer le zoom"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Central Zoom Canvas */}
+            <div
+              className={`flex-1 flex items-center justify-center overflow-hidden w-full h-full my-2 relative touch-none ${
+                lightboxZoom > 1
+                  ? isDragging
+                    ? 'cursor-grabbing'
+                    : 'cursor-grab'
+                  : 'cursor-zoom-in'
+              }`}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMoveLightbox}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onWheel={handleWheel}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              onDoubleClick={handleDoubleClick}
+            >
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  transform: `translate(${panPosition.x}px, ${panPosition.y}px) scale(${lightboxZoom})`,
+                  transition: isDragging ? 'none' : 'transform 0.15s ease-out',
+                }}
+              >
+                <img
+                  src={
+                    product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
+                      ? product.imageUrl
+                      : isExtrait
+                      ? '/tulip-extrait-default.jpg'
+                      : product.family === 'Accessoire'
+                      ? 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=1200'
+                      : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=1200')
+                  }
+                  alt={localized.name}
+                  className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl pointer-events-none select-none border border-white/10"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const target = e.currentTarget as HTMLImageElement;
+                    target.onerror = null;
+                    target.src = '/tulip-extrait-default.jpg';
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Bottom Helper Bar */}
+            <div className="w-full max-w-md mx-auto text-center z-20 pb-2">
+              <span className="text-[11px] sm:text-xs text-white/80 bg-black/50 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 shadow-md inline-block">
+                Double-cliquez ou pincez l'écran pour zoomer • Molette ou glissez pour naviguer
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </AnimatePresence>
   );

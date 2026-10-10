@@ -16,7 +16,7 @@ export const TulipLogo: React.FC<TulipLogoProps> = ({
   theme = 'light',
 }) => {
   const sizeMap = {
-    sm: { icon: 'w-7 h-7', title: 'text-sm', sub: 'text-[9px]' },
+    sm: { icon: 'w-5.5 h-5.5 sm:w-6 sm:h-6', title: 'text-xs sm:text-[13px]', sub: 'text-[7px] sm:text-[7.5px]' },
     md: { icon: 'w-9 h-9 sm:w-10 sm:h-10', title: 'text-base sm:text-lg', sub: 'text-[10px]' },
     lg: { icon: 'w-14 h-14', title: 'text-xl sm:text-2xl', sub: 'text-xs' },
     xl: { icon: 'w-20 h-20', title: 'text-3xl', sub: 'text-sm' },
@@ -114,7 +114,7 @@ export const TulipLogo: React.FC<TulipLogoProps> = ({
 
   // Horizontal default layout
   return (
-    <div className={`flex items-center gap-2.5 sm:gap-3 ${className}`}>
+    <div className={`flex items-center ${size === 'sm' ? 'gap-2' : 'gap-2.5 sm:gap-3'} ${className}`}>
       {IconSvg}
       <div className="flex flex-col">
         <div className="flex items-center gap-1.5">
@@ -126,7 +126,7 @@ export const TulipLogo: React.FC<TulipLogoProps> = ({
           >
             TULIP
           </span>
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-pink-100 text-[#880e4f] font-bold border border-pink-200/80">
+          <span className={`${size === 'sm' ? 'text-[8px] px-1 py-0.2' : 'text-[9px] px-1.5 py-0.5'} rounded bg-pink-100 text-[#880e4f] font-bold border border-pink-200/80 leading-none`}>
             ORAN
           </span>
         </div>

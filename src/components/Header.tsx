@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { ProductFamily, StoreSettings, CustomerUser } from '../types';
 import { INITIAL_STORE_SETTINGS } from '../data/initialProducts';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { TulipLogo } from './TulipLogo';
 import { AppLanguage, translations } from '../translations';
 
@@ -110,8 +110,8 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Main Navbar */}
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-3">
         {/* Brand & Tulip Logo */}
-        <div className="flex items-center gap-3">
-          <TulipLogo variant="horizontal" size="md" theme="light" />
+        <div className="flex items-center gap-2">
+          <TulipLogo variant="horizontal" size="sm" theme="light" />
         </div>
 
         {/* Product Family Filter Navigation (Desktop only) */}
@@ -196,11 +196,16 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenCustomerAuth('login')}
-                    className="px-2.5 sm:px-3 py-2 rounded-xl bg-pink-50 hover:bg-pink-100 text-[#880e4f] border border-pink-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                    className="relative px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:from-[#880e4f] hover:to-[#be185d] text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md hover:scale-105 active:scale-95 ring-2 ring-rose-400/60 sm:ring-pink-500/30 shrink-0"
                     title={t.loginBtn}
                   >
-                    <Lock className="w-3.5 h-3.5 text-[#9f0e4e]" />
-                    <span className="hidden sm:inline">{t.loginBtn}</span>
+                    {/* Glowing notice indicator dot on mobile */}
+                    <span className="relative flex h-2 w-2 sm:hidden">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-300 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
+                    </span>
+                    <Lock className="w-3.5 h-3.5 text-amber-200 shrink-0" />
+                    <span className="whitespace-nowrap font-black">{t.loginBtn}</span>
                   </button>
 
                   <button
@@ -248,8 +253,8 @@ export const Header: React.FC<HeaderProps> = ({
             </>
           )}
 
-          {/* ORDER TRACKING BUTTON (Placed Next to Cart Button) */}
-          {onOpenOrderTracking && (
+          {/* ORDER TRACKING BUTTON (Strictly hidden for non logged-in users) */}
+          {Boolean(currentCustomer && onOpenOrderTracking) && (
             <button
               id="btn-header-track-order"
               type="button"

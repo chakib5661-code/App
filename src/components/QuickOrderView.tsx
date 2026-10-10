@@ -17,7 +17,7 @@ import {
   Flame,
 } from 'lucide-react';
 import { Product, ProductFamily, CartItem } from '../types';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { isProductTopSeller, calculateDiscountedPrice } from '../utils/productUtils';
@@ -27,6 +27,7 @@ interface QuickOrderViewProps {
   cart: CartItem[];
   onAddToCart: (product: Product, quantity: number) => void;
   onUpdateCartQuantity: (productId: string, newQty: number) => void;
+  onDecreaseCartQuantity?: (productId: string, quantityToDecrease: number) => void;
   onOpenCart: () => void;
   onQuickView: (product: Product) => void;
   onSwitchToShowroom?: () => void;
@@ -44,6 +45,8 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
   products,
   cart,
   onAddToCart,
+  onUpdateCartQuantity,
+  onDecreaseCartQuantity,
   onOpenCart,
   onQuickView,
   isPricesVisible = false,
@@ -61,22 +64,29 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
   // Filters
   const [search, setSearch] = useState('');
 
-  // Automatically scroll to top of list when search changes in QuickOrderView
-  useEffect(() => {
-    if (!search) return;
-    const timeout = setTimeout(() => {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 600);
-    return () => clearTimeout(timeout);
-  }, [search]);
   const [localFamily, setLocalFamily] = useState<ProductFamily | 'all'>('all');
   const [inStockOnly, setInStockOnly] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [topSellersOnly, setTopSellersOnly] = useState(false);
 
-  const topSellersCount = useMemo(() => products.filter(isProductTopSeller).length, [products]);
-
   const activeFamily = propFamily !== undefined ? propFamily : localFamily;
+
+  // Automatically scroll back to top of list when any filter or search changes in QuickOrderView
+  const isFirstQuickOrderMount = React.useRef(true);
+  useEffect(() => {
+    if (isFirstQuickOrderMount.current) {
+      isFirstQuickOrderMount.current = false;
+      return;
+    }
+    const timeout = setTimeout(() => {
+      if (typeof window !== 'undefined' && window.scrollY > 40) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 120);
+    return () => clearTimeout(timeout);
+  }, [search, activeFamily, inStockOnly, favoritesOnly, topSellersOnly]);
+
+  const topSellersCount = useMemo(() => products.filter(isProductTopSeller).length, [products]);
   const handleSelectFamily = (fam: ProductFamily | 'all') => {
     if (propOnSelectFamily) {
       propOnSelectFamily(fam);
@@ -88,6 +98,24 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
   // Map of item quantity input state keyed by productId
   const [rowQuantities, setRowQuantities] = useState<Record<string, number>>({});
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
+
+  // Responsive device viewport check to prevent double rendering of DOM (cards + table)
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : false
+  );
+
+  useEffect(() => {
+    const onResize = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Progressive batch loading for mobile devices to prevent RAM exhaustion on low-memory phones
+  const [mobileBatchLimit, setMobileBatchLimit] = useState(35);
+
+  useEffect(() => {
+    setMobileBatchLimit(35);
+  }, [search, activeFamily, inStockOnly, favoritesOnly, topSellersOnly]);
 
   // Fast cart lookup
   const cartMap = useMemo(() => {
@@ -116,6 +144,10 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       return true;
     });
   }, [products, activeFamily, inStockOnly, search, lang, favoritesOnly, favorites, topSellersOnly]);
+
+  const displayedMobileProducts = useMemo(() => {
+    return filteredProducts.slice(0, mobileBatchLimit);
+  }, [filteredProducts, mobileBatchLimit]);
 
   const getRowQty = (product: Product) => {
     if (rowQuantities[product.id] !== undefined) {
@@ -367,11 +399,10 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
               {lang === 'ar' ? 'إعادة ضبط الفلاتر' : 'Réinitialiser les filtres'}
             </button>
           </div>
-        ) : (
-          <>
-            {/* MOBILE LAYOUT: Phone Screen Friendly Card List (Fixed Overflow) */}
-            <div className="md:hidden space-y-3">
-              {filteredProducts.map((product) => {
+        ) : !isDesktop ? (
+          /* MOBILE LAYOUT: Phone Screen Friendly Card List (Optimized for low RAM) */
+          <div className="space-y-3">
+            {displayedMobileProducts.map((product) => {
                 const isExtrait = product.family === 'Extrait';
                 const localized = getProductLocalizedDetails(product, lang);
                 const cartQty = cartMap[product.id] || 0;
@@ -401,7 +432,11 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                             : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=200')
                         }
                         alt={localized.name}
-                        className="w-16 h-16 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200"
+                        width={64}
+                        height={64}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-16 h-16 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200 cursor-zoom-in hover:scale-105 active:scale-95 transition-transform"
                         referrerPolicy="no-referrer"
                         onError={(e) => {
                           const target = e.currentTarget as HTMLImageElement;
@@ -487,10 +522,15 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                               </span>
                             </div>
                           ) : (
-                            <span className="text-[11px] font-semibold text-amber-800 flex items-center gap-1">
-                              <Lock className="w-3 h-3" />
-                              {t.priceHiddenNotice}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={onRequireLogin}
+                              className="text-[11px] font-bold text-amber-800 hover:text-amber-950 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 cursor-pointer shadow-3xs"
+                              title={t.loginBtn}
+                            >
+                              <Lock className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span>{t.priceHiddenNotice}</span>
+                            </button>
                           )}
 
                           {/* Availability */}
@@ -576,13 +616,46 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                         )}
                       </div>
                     )}
+
+                    {!isOutOfStock && isItemInCart && onDecreaseCartQuantity && (
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={() => onDecreaseCartQuantity(product.id, isExtrait ? 100 : 1)}
+                          className="w-full py-2 px-3 text-xs font-black rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 hover:text-rose-950 border border-rose-200 hover:border-rose-300 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                          title={isExtrait ? "Retirer 100g" : "Retirer 1 unité"}
+                        >
+                          <Minus className="w-3 h-3 stroke-[3]" />
+                          <span>
+                            {lang === 'ar'
+                              ? (isExtrait ? 'إزالة 100غ' : 'إزالة قطعة')
+                              : (isExtrait ? 'Retirer 100g' : 'Retirer 1 unité')}
+                          </span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
-            </div>
 
-            {/* DESKTOP TABLE: Full High-Density Grid */}
-            <div className="hidden md:block bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
+              {/* Load more cards for mobile if there are remaining products */}
+              {filteredProducts.length > mobileBatchLimit && (
+                <div className="pt-2 pb-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setMobileBatchLimit((prev) => prev + 35)}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white text-xs font-black transition shadow-md active:scale-98 cursor-pointer"
+                  >
+                    {lang === 'ar'
+                      ? `عرض المزيد من المنتجات (+35) • متبقي ${filteredProducts.length - mobileBatchLimit}`
+                      : `Afficher plus de produits (+35) • ${filteredProducts.length - mobileBatchLimit} restants`}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* DESKTOP TABLE: Full High-Density Grid */
+            <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -636,7 +709,11 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                                     : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=200')
                                 }
                                 alt={localized.name}
-                                className="w-12 h-12 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200 cursor-pointer hover:opacity-80 transition"
+                                width={48}
+                                height={48}
+                                loading="lazy"
+                                decoding="async"
+                                className="w-12 h-12 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200 cursor-zoom-in hover:scale-110 active:scale-95 transition-transform"
                                 referrerPolicy="no-referrer"
                                 onError={(e) => {
                                   const target = e.currentTarget as HTMLImageElement;
@@ -766,9 +843,15 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                                 </span>
                               </div>
                             ) : (
-                              <div className="flex items-center justify-end gap-1 text-[11px] font-bold text-amber-800">
-                                <Lock className="w-3 h-3 text-amber-600" />
-                                <span>{t.priceHiddenNotice}</span>
+                              <div className="flex items-center justify-end">
+                                <button
+                                  type="button"
+                                  onClick={onRequireLogin}
+                                  className="px-2.5 py-1 text-[11px] font-black bg-[#9f0e4e] hover:bg-[#880e4f] text-white rounded-lg shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <Lock className="w-3 h-3 text-pink-200 shrink-0" />
+                                  <span>{t.loginBtn}</span>
+                                </button>
                               </div>
                             )}
                           </td>
@@ -852,32 +935,50 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                                 Épuisé
                               </button>
                             ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleAddRow(product)}
-                                disabled={isAllInCart}
-                                className={`w-full py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs ${
-                                  isItemInCart
-                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400/30'
-                                    : isAllInCart
-                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                    : 'bg-slate-900 hover:bg-slate-800 text-white'
-                                }`}
-                              >
-                                {isItemInCart ? (
-                                  <>
-                                    <Check className="w-3.5 h-3.5" />
+                              <div className="flex flex-col gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddRow(product)}
+                                  disabled={isAllInCart}
+                                  className={`w-full py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs ${
+                                    isItemInCart
+                                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400/30'
+                                      : isAllInCart
+                                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                      : 'bg-slate-900 hover:bg-slate-800 text-white'
+                                  }`}
+                                >
+                                  {isItemInCart ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span>
+                                        ✓ {t.addedToCart} ({cartQty}{isExtrait ? 'g' : ''})
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span>{t.addToPreorder}</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                {isItemInCart && onDecreaseCartQuantity && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onDecreaseCartQuantity(product.id, isExtrait ? 100 : 1)}
+                                    className="w-full py-1.5 px-3 text-[11px] font-black rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 hover:text-rose-950 border border-rose-200 hover:border-rose-300 transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
+                                    title={isExtrait ? "Retirer 100g" : "Retirer 1 unité"}
+                                  >
+                                    <Minus className="w-2.5 h-2.5 stroke-[3]" />
                                     <span>
-                                      ✓ {t.addedToCart} ({cartQty}{isExtrait ? 'g' : ''})
+                                      {lang === 'ar'
+                                        ? (isExtrait ? 'إزالة 100غ' : 'إزالة قطعة')
+                                        : (isExtrait ? 'Retirer 100g' : 'Retirer 1 unité')}
                                     </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Plus className="w-3.5 h-3.5" />
-                                    <span>{t.addToPreorder}</span>
-                                  </>
+                                  </button>
                                 )}
-                              </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -887,7 +988,6 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                 </table>
               </div>
             </div>
-          </>
         )}
       </div>
     </div>

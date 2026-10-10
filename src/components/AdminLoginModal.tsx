@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, KeyRound, ShieldCheck, AlertCircle } from 'lucide-react';
+import { X, Lock, KeyRound, ShieldCheck, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -15,6 +15,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   onSuccess,
 }) => {
   const [pin, setPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState(false);
 
   if (!isOpen) return null;
@@ -69,17 +70,28 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               <KeyRound className="w-3.5 h-3.5 text-amber-400" />
               Code d'accès administrateur :
             </label>
-            <input
-              type="password"
-              value={pin}
-              onChange={(e) => {
-                setPin(e.target.value);
-                setError(false);
-              }}
-              placeholder="Saisissez votre code administrateur"
-              autoFocus
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white placeholder:text-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
-            />
+            <div className="relative">
+              <input
+                type={showPin ? 'text' : 'password'}
+                value={pin}
+                onChange={(e) => {
+                  setPin(e.target.value);
+                  setError(false);
+                }}
+                placeholder="Saisissez votre code administrateur"
+                autoFocus
+                className="w-full pl-3 pr-10 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white placeholder:text-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPin(!showPin)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition p-1 cursor-pointer"
+                title={showPin ? 'Masquer le code' : 'Afficher le code'}
+                aria-label={showPin ? 'Masquer le code' : 'Afficher le code'}
+              >
+                {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -93,13 +105,13 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700"
+              className="flex-1 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700 cursor-pointer"
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="flex-1 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-sm transition"
+              className="flex-1 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-sm transition cursor-pointer"
             >
               Déverrouiller
             </button>

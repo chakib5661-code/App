@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { Product, CartItem, SavedPreorder } from '../types';
 import { calculateDiscountedPrice } from '../utils/productUtils';
-import { formatDZD } from '../utils/pdfGenerator';
+import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 
@@ -826,9 +826,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
                       {/* Pricing & Add Trigger */}
                       <div className="flex items-center justify-between pt-2 border-t border-slate-900">
-                        <span className="text-xs font-extrabold text-amber-400 font-mono">
-                          {formatDZD(price)}
-                        </span>
+                        {isPricesVisible ? (
+                          <span className="text-xs font-extrabold text-amber-400 font-mono">
+                            {formatDZD(price)}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400/90 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                            <Lock className="w-2.5 h-2.5 text-amber-400" />
+                            <span>{t.priceHiddenNotice}</span>
+                          </span>
+                        )}
 
                         {isAlreadyInCart && cartItem ? (
                           <div className="flex items-center gap-2 bg-[#70083b]/20 border border-[#70083b]/40 rounded-xl px-1.5 py-0.5">

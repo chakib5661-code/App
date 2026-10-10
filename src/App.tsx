@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue, Suspense } from 'react';
 import {
   Sparkles,
   Layers,
@@ -32,28 +32,28 @@ import { Header } from './components/Header';
 import { ProductCard } from './components/ProductCard';
 import { ProductFilter, StockFilterType, SortOption } from './components/ProductFilter';
 import { CartDrawer } from './components/CartDrawer';
-import { PreOrderModal } from './components/PreOrderModal';
-import { OrderConfirmationModal } from './components/OrderConfirmationModal';
-import { ExcelSyncModal } from './components/ExcelSyncModal';
-import { AdminOrdersModal } from './components/AdminOrdersModal';
-import { ProductDetailModal } from './components/ProductDetailModal';
-import { AdminLoginModal } from './components/AdminLoginModal';
-import { AdminPortal } from './components/AdminPortal';
-import { CustomerAuthModal } from './components/CustomerAuthModal';
-import { AdPopupModal } from './components/AdPopupModal';
-import { OrderTrackingModal } from './components/OrderTrackingModal';
 import { QuickOrderView } from './components/QuickOrderView';
 import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
-import { InterfaceChoiceModal } from './components/InterfaceChoiceModal';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
-import { LanguageSelectionModal } from './components/LanguageSelectionModal';
-import { PwaInstallModal } from './components/PwaInstallModal';
-import { PwaInstallAdviceBanner } from './components/PwaInstallAdviceBanner';
 import { AppLanguage } from './translations';
-import { downloadOrderPDF, formatDZD } from './utils/pdfGenerator';
+import { formatDZD } from './utils/formatDZD';
 import { trackCustomEvent, applyServerAnalyticsConfig } from './utils/analytics';
 import { isProductTopSeller, calculateDiscountedPrice } from './utils/productUtils';
 import { detectUserDevice, DeviceInfo } from './utils/deviceDetector';
+
+// Code-split heavy modals and administration tools to slash initial bundle size and boost Core Web Vitals (LCP, INP, CLS)
+const PreOrderModal = React.lazy(() => import('./components/PreOrderModal').then(m => ({ default: m.PreOrderModal })));
+const OrderConfirmationModal = React.lazy(() => import('./components/OrderConfirmationModal').then(m => ({ default: m.OrderConfirmationModal })));
+const ExcelSyncModal = React.lazy(() => import('./components/ExcelSyncModal').then(m => ({ default: m.ExcelSyncModal })));
+const AdminOrdersModal = React.lazy(() => import('./components/AdminOrdersModal').then(m => ({ default: m.AdminOrdersModal })));
+const ProductDetailModal = React.lazy(() => import('./components/ProductDetailModal').then(m => ({ default: m.ProductDetailModal })));
+const AdminLoginModal = React.lazy(() => import('./components/AdminLoginModal').then(m => ({ default: m.AdminLoginModal })));
+const AdminPortal = React.lazy(() => import('./components/AdminPortal').then(m => ({ default: m.AdminPortal })));
+const CustomerAuthModal = React.lazy(() => import('./components/CustomerAuthModal').then(m => ({ default: m.CustomerAuthModal })));
+const AdPopupModal = React.lazy(() => import('./components/AdPopupModal').then(m => ({ default: m.AdPopupModal })));
+const OrderTrackingModal = React.lazy(() => import('./components/OrderTrackingModal').then(m => ({ default: m.OrderTrackingModal })));
+const InterfaceChoiceModal = React.lazy(() => import('./components/InterfaceChoiceModal').then(m => ({ default: m.InterfaceChoiceModal })));
+const LanguageSelectionModal = React.lazy(() => import('./components/LanguageSelectionModal').then(m => ({ default: m.LanguageSelectionModal })));
 import {
   fetchSyncData,
   submitOrderToServer,
@@ -80,8 +80,6 @@ import {
   bulkDeleteOrdersOnServer,
 } from './utils/api';
 import { playOrderNotificationSound, playAccessNotificationSound } from './utils/audioAlert';
-import { idbSaveProducts, idbGetProducts, idbSaveOfflineOrders, idbGetOfflineOrders } from './utils/indexedDb';
-import { prefetchProductImages, getCachedImagesCount } from './utils/imageCache';
 import { subscribeToSupabaseRealtime, triggerAutoSyncToSupabase } from './utils/supabaseClient';
 
 const STORAGE_KEYS = {
@@ -196,76 +194,22 @@ const safeSetStorageItem = (key: string, value: string): void => {
 };
 
 const cacheProductsLocally = (products: Product[]): void => {
-  try {
-    // Strip large inline base64 images (>10KB) for the offline localStorage cache to prevent exceeding the browser 5MB quota
-    const sanitized = products.map((p) => {
-      if (p.imageUrl && p.imageUrl.startsWith('data:') && p.imageUrl.length > 10000) {
-        return { ...p, imageUrl: '' };
-      }
-      return p;
-    });
-    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(sanitized));
-  } catch (err: any) {
-    console.warn('[Storage] Quota reached when caching products. Clearing products local cache to prevent crashes:', err?.message || err);
-    try {
-      // If even sanitized fails, remove the key so it doesn't leave corrupted or oversized data
-      localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
-    } catch {}
-  }
+  // Completely disabled: do not save catalog data offline
 };
 
 const cacheBannersLocally = (banners: AdBanner[]): void => {
-  try {
-    const sanitized = banners.map((b) => {
-      if (b.imageUrl && b.imageUrl.startsWith('data:') && b.imageUrl.length > 10000) {
-        return { ...b, imageUrl: '' };
-      }
-      return b;
-    });
-    localStorage.setItem(STORAGE_KEYS.AD_BANNERS, JSON.stringify(sanitized));
-  } catch (err: any) {
-    console.warn('[Storage] Quota notice when caching banners:', err?.message || err);
-  }
+  // Completely disabled: do not save banner data offline
 };
 
 // Safe client session initialization without purging user database
 // (Session purging block removed to preserve customer sessions upon refresh)
 
 export default function App() {
-  // 1. Core State
-  const [products, setProducts] = useState<Product[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch {
-      // fallback
-    }
-    return INITIAL_PRODUCTS;
-  });
+  // 1. Core State (Always starts empty and fetches fresh from the live database)
+  const [products, setProducts] = useState<Product[]>([]);
 
-  // Rapid Store Access: Shell mounts instantly, products hydrate from local cache or load smoothly
-  const [isCatalogLoading, setIsCatalogLoading] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return false;
-        }
-      }
-    } catch {}
-    if (INITIAL_PRODUCTS.length > 0) return false;
-    // If offline, do not stall on skeleton screen
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      return false;
-    }
-    return true;
-  });
+  // Rapid Store Access: Shell loads with sleek loading animation until fresh data is delivered
+  const [isCatalogLoading, setIsCatalogLoading] = useState<boolean>(true);
 
   useEffect(() => {
     // Ultra-fast safety fallback: reveal catalog shell within 800ms
@@ -275,22 +219,11 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Hydrate products & offline orders from IndexedDB on startup (unlimited PWA storage)
+  // Sync live catalog on startup
   useEffect(() => {
     let active = true;
-    idbGetProducts().then((idbProducts) => {
-      if (!active || !idbProducts || idbProducts.length === 0) return;
-      setProducts((prev) => {
-        if (prev.length === 0) return idbProducts;
-        return prev;
-      });
-      setIsCatalogLoading(false);
-      prefetchProductImages(idbProducts).then(() => {
-        if (active) getCachedImagesCount().then(setCachedImagesCount).catch(() => {});
-      }).catch(() => {});
-    }).catch(() => {});
 
-    // For new devices / empty cache: immediately trigger live sync from Supabase/Server
+    // Trigger live sync from Server/Supabase database authority on mount
     setIsSyncingStocks(true);
     fetchSyncData(3000).then((data) => {
       if (!active || !data) return;
@@ -339,16 +272,7 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
-  const [orders, setOrders] = useState<PreOrder[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.ORDERS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return loadOfflineOrdersQueue();
-  });
+  const [orders, setOrders] = useState<PreOrder[]>([]);
 
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
@@ -382,6 +306,7 @@ export default function App() {
   // 2. Filter & Navigation State
   const [selectedFamily, setSelectedFamily] = useState<ProductFamily | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [stockFilter, setStockFilter] = useState<StockFilterType>('all');
   const [sortOption, setSortOption] = useState<SortOption>('default');
   const [showOnlyTopSellers, setShowOnlyTopSellers] = useState(false);
@@ -423,26 +348,8 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1);
 
   // 5. Customer Authentication & Application Management State
-  const [customerApplications, setCustomerApplications] = useState<CustomerApplication[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMER_APPLICATIONS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_CUSTOMER_APPLICATIONS;
-  });
-  const [customerUsers, setCustomerUsers] = useState<CustomerUser[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMER_USERS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [];
-  });
+  const [customerApplications, setCustomerApplications] = useState<CustomerApplication[]>([]);
+  const [customerUsers, setCustomerUsers] = useState<CustomerUser[]>([]);
 
   const [currentCustomer, setCurrentCustomer] = useState<CustomerUser | null>(() => {
     try {
@@ -472,21 +379,7 @@ export default function App() {
   const isPricesVisible = Boolean(currentCustomer && currentCustomer.status === 'approved');
 
   // 6. Advertising Popup State
-  const [adBanners, setAdBanners] = useState<AdBanner[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.AD_BANNERS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const clean = parsed.filter((b: any) => b && !b.id?.startsWith('ad-00'));
-          return clean;
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return [];
-  });
+  const [adBanners, setAdBanners] = useState<AdBanner[]>([]);
 
   const [isAdPopupEnabled, setIsAdPopupEnabled] = useState<boolean>(() => {
     try {
@@ -579,13 +472,18 @@ export default function App() {
     }
   }, [favorites]);
 
-  const handleToggleFavorite = (productId: string) => {
+  const handleToggleFavorite = useCallback((productId: string) => {
     setFavorites((prev) => {
       const exists = prev.includes(productId);
       const updated = exists ? prev.filter((id) => id !== productId) : [...prev, productId];
       return updated;
     });
-  };
+  }, []);
+
+  const handleRequireLogin = useCallback(() => {
+    setCustomerAuthInitialTab('login');
+    setIsCustomerAuthOpen(true);
+  }, []);
 
   const [savedPreorders, setSavedPreorders] = useState<SavedPreorder[]>(() => {
     return loadSavedPreordersForCustomer(currentCustomer);
@@ -599,22 +497,245 @@ export default function App() {
   }, [currentCustomer]);
 
   // Automatically scroll to the top of the catalog when search query changes
+  // 1. Scroll back to top after selecting filter or searching for product
+  const isFirstFilterMountRef = useRef(true);
   useEffect(() => {
-    if (!searchQuery) return;
-    
-    // Debounce the scroll to top so it doesn't jump while typing rapidly
+    if (isFirstFilterMountRef.current) {
+      isFirstFilterMountRef.current = false;
+      return;
+    }
+    // Reset pagination to first page
+    setCurrentPage(1);
+
+    // Scroll smoothly to top of page/catalog if scrolled down
     const timeout = setTimeout(() => {
-      const catalogEl = document.getElementById('search-products-input');
-      if (catalogEl) {
-        // Scroll the filter bar/catalog smoothly into view
-        catalogEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else {
+      if (typeof window !== 'undefined' && window.scrollY > 40) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
-    }, 600);
+    }, 120);
 
     return () => clearTimeout(timeout);
-  }, [searchQuery]);
+  }, [
+    selectedFamily,
+    deferredSearchQuery,
+    stockFilter,
+    sortOption,
+    showOnlyFavorites,
+    showOnlyTopSellers,
+  ]);
+
+  // 2. Mobile Navigation: Handle phone "Return / Back" button and prevent accidental tab close
+  const [backExitPrompt, setBackExitPrompt] = useState(false);
+  const lastBackPressTimeRef = useRef<number>(0);
+
+  // Initialize safety history entry on mount so mobile back doesn't close the browser tab
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        if (!window.history.state || !window.history.state.tulipRoot) {
+          window.history.replaceState({ tulipRoot: true, step: 0 }, '');
+          window.history.pushState({ tulipRoot: true, step: 1 }, '');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
+  // Track active overlay state in ref to avoid stale closures in window event listener
+  const overlaysStateRef = useRef({
+    quickViewProduct,
+    isCartOpen,
+    isPreOrderModalOpen,
+    isConfirmationOpen,
+    isCustomerAuthOpen,
+    isOrderTrackingOpen,
+    isExcelSyncOpen,
+    isAdminOrdersOpen,
+    isAdminLoginOpen,
+    isPwaGuideOpen,
+    isInterfaceChoiceOpen,
+    isAdPopupOpen,
+    currentView,
+    currentInterface,
+    searchQuery,
+  });
+
+  useEffect(() => {
+    overlaysStateRef.current = {
+      quickViewProduct,
+      isCartOpen,
+      isPreOrderModalOpen,
+      isConfirmationOpen,
+      isCustomerAuthOpen,
+      isOrderTrackingOpen,
+      isExcelSyncOpen,
+      isAdminOrdersOpen,
+      isAdminLoginOpen,
+      isPwaGuideOpen,
+      isInterfaceChoiceOpen,
+      isAdPopupOpen,
+      currentView,
+      currentInterface,
+      searchQuery,
+    };
+  }, [
+    quickViewProduct,
+    isCartOpen,
+    isPreOrderModalOpen,
+    isConfirmationOpen,
+    isCustomerAuthOpen,
+    isOrderTrackingOpen,
+    isExcelSyncOpen,
+    isAdminOrdersOpen,
+    isAdminLoginOpen,
+    isPwaGuideOpen,
+    isInterfaceChoiceOpen,
+    isAdPopupOpen,
+    currentView,
+    currentInterface,
+    searchQuery,
+  ]);
+
+  // Push history state whenever any overlay opens so the phone Return button pops it
+  const isAnyOverlayActive = Boolean(
+    quickViewProduct ||
+    isCartOpen ||
+    isPreOrderModalOpen ||
+    isConfirmationOpen ||
+    isCustomerAuthOpen ||
+    isOrderTrackingOpen ||
+    isExcelSyncOpen ||
+    isAdminOrdersOpen ||
+    isAdminLoginOpen ||
+    isPwaGuideOpen ||
+    isInterfaceChoiceOpen ||
+    isAdPopupOpen
+  );
+  const prevAnyOverlayActiveRef = useRef(false);
+
+  useEffect(() => {
+    if (isAnyOverlayActive && !prevAnyOverlayActiveRef.current) {
+      try {
+        window.history.pushState({ tulipModal: true }, '');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    prevAnyOverlayActiveRef.current = isAnyOverlayActive;
+  }, [isAnyOverlayActive]);
+
+  // Listen to popstate when user presses phone return button
+  useEffect(() => {
+    const handlePopState = () => {
+      const state = overlaysStateRef.current;
+
+      // 1. Close any open modal or drawer first
+      if (state.quickViewProduct) {
+        setQuickViewProduct(null);
+        return;
+      }
+      if (state.isCartOpen) {
+        setIsCartOpen(false);
+        return;
+      }
+      if (state.isPreOrderModalOpen) {
+        setIsPreOrderModalOpen(false);
+        return;
+      }
+      if (state.isCustomerAuthOpen) {
+        setIsCustomerAuthOpen(false);
+        return;
+      }
+      if (state.isOrderTrackingOpen) {
+        setIsOrderTrackingOpen(false);
+        return;
+      }
+      if (state.isConfirmationOpen) {
+        setIsConfirmationOpen(false);
+        return;
+      }
+      if (state.isExcelSyncOpen) {
+        setIsExcelSyncOpen(false);
+        return;
+      }
+      if (state.isAdminOrdersOpen) {
+        setIsAdminOrdersOpen(false);
+        return;
+      }
+      if (state.isAdminLoginOpen) {
+        setIsAdminLoginOpen(false);
+        return;
+      }
+      if (state.isPwaGuideOpen) {
+        setIsPwaGuideOpen(false);
+        return;
+      }
+      if (state.isInterfaceChoiceOpen) {
+        setIsInterfaceChoiceOpen(false);
+        return;
+      }
+      if (state.isAdPopupOpen) {
+        setIsAdPopupOpen(false);
+        return;
+      }
+
+      // 2. If in Admin Portal, return to Storefront
+      if (state.currentView === 'admin') {
+        setCurrentView('store');
+        try {
+          window.history.pushState({ tulipRoot: true, step: 1 }, '');
+        } catch (e) {
+          console.error(e);
+        }
+        return;
+      }
+
+      // 3. If in Quick Order view, switch back to Showroom
+      if (state.currentInterface === 'quick') {
+        setCurrentInterface('showroom');
+        try {
+          window.history.pushState({ tulipRoot: true, step: 1 }, '');
+        } catch (e) {
+          console.error(e);
+        }
+        return;
+      }
+
+      // 4. If search query is entered, clear it
+      if (state.searchQuery.trim() !== '') {
+        setSearchQuery('');
+        try {
+          window.history.pushState({ tulipRoot: true, step: 1 }, '');
+        } catch (e) {
+          console.error(e);
+        }
+        return;
+      }
+
+      // 5. At root storefront with no overlays:
+      // Prevent accidental tab closure. Double-tap within 2.2s allows exiting.
+      const now = Date.now();
+      if (now - lastBackPressTimeRef.current < 2200) {
+        // Double-tap confirmed: allow native exit
+        window.history.back();
+      } else {
+        lastBackPressTimeRef.current = now;
+        try {
+          window.history.pushState({ tulipRoot: true, step: 1 }, '');
+        } catch (e) {
+          console.error(e);
+        }
+        setBackExitPrompt(true);
+        setTimeout(() => {
+          setBackExitPrompt(false);
+        }, 2200);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Rapid store entry: default directly to showroom on first visit without blocking modal
   useEffect(() => {
@@ -815,26 +936,7 @@ export default function App() {
   const isImagePrefetchedRef = useRef(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      cacheProductsLocally(products);
-      idbSaveProducts(products).catch(() => {});
-    }, 300);
-
-    // Prefetch product images into cacheStorage once on startup or when catalog is initially populated
-    if (products.length > 0 && !isImagePrefetchedRef.current) {
-      isImagePrefetchedRef.current = true;
-      const idleTimer = setTimeout(() => {
-        prefetchProductImages(products).then(() => {
-          getCachedImagesCount().then(setCachedImagesCount).catch(() => {});
-        }).catch(() => {});
-      }, 1500);
-      return () => {
-        clearTimeout(timer);
-        clearTimeout(idleTimer);
-      };
-    }
-
-    return () => clearTimeout(timer);
+    // Product caching and offline image prefetching are completely disabled to guarantee fresh delivery
   }, [products]);
 
   useEffect(() => {
@@ -865,38 +967,10 @@ export default function App() {
     safeSetStorageItem(STORAGE_KEYS.AD_POPUP_ENABLED, JSON.stringify(isAdPopupEnabled));
   }, [isAdPopupEnabled]);
 
-  // Continuous Local Storage Persistence to ensure admin edits and user applications never reset
+  // Continuous Local Storage Persistence - completely disabled to prevent cache download/accumulation
   useEffect(() => {
-    try {
-      if (products.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-      }
-    } catch {}
-  }, [products]);
-
-  useEffect(() => {
-    try {
-      if (orders.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-      }
-    } catch {}
-  }, [orders]);
-
-  useEffect(() => {
-    try {
-      if (customerUsers.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.CUSTOMER_USERS, JSON.stringify(customerUsers));
-      }
-    } catch {}
-  }, [customerUsers]);
-
-  useEffect(() => {
-    try {
-      if (customerApplications.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.CUSTOMER_APPLICATIONS, JSON.stringify(customerApplications));
-      }
-    } catch {}
-  }, [customerApplications]);
+    // Persistent caching of products, orders, customers, and applications is disabled
+  }, [products, orders, customerUsers, customerApplications]);
 
   const handleAutoRestoreLocalDb = async () => {
     try {
@@ -1448,7 +1522,6 @@ export default function App() {
 
     const handleOffline = () => {
       setIsOnline(false);
-      getCachedImagesCount().then(setCachedImagesCount).catch(() => {});
       setSyncToastMessage(
         currentLang === 'ar'
           ? '📡 وضع عدم الاتصال نشط: يمكنك مواصلة تصفح المنتجات وإجراء الطلبيات بكل حرية.'
@@ -1468,8 +1541,7 @@ export default function App() {
     window.addEventListener('offline', handleOffline);
     window.addEventListener('focus', handleFocus);
 
-    // Initial check to count cached images and drain any pending orders
-    getCachedImagesCount().then(setCachedImagesCount).catch(() => {});
+    // Initial check to drain any pending orders
     syncOfflineQueueToServer();
 
     return () => {
@@ -1516,9 +1588,9 @@ export default function App() {
         if (stockFilter === 'low_stock' && (p.stock <= 0 || p.stock > (p.minAlertStock || 5))) return false;
         if (stockFilter === 'out_of_stock' && p.stock > 0) return false;
 
-        // Search query
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
+        // Search query (using deferred value to keep keystrokes 100% fluid)
+        if (deferredSearchQuery.trim()) {
+          const q = deferredSearchQuery.toLowerCase();
           const matchCode = (p.code || '').toLowerCase().includes(q);
           const matchName = (p.name || '').toLowerCase().includes(q);
           const matchCategory = (p.category || '').toLowerCase().includes(q);
@@ -1540,7 +1612,7 @@ export default function App() {
           case 'stock_desc':
             return b.stock - a.stock;
           case 'name_asc':
-            return a.name.localeCompare(b.name, 'fr');
+            return a.name > b.name ? 1 : a.name < b.name ? -1 : 0;
           default: {
             // Default sorting: place top-selling products first, then sort alphabetically
             const aTop = isProductTopSeller(a) ? 1 : 0;
@@ -1548,25 +1620,38 @@ export default function App() {
             if (bTop !== aTop) {
               return bTop - aTop;
             }
-            return a.name.localeCompare(b.name, 'fr');
+            return a.name > b.name ? 1 : a.name < b.name ? -1 : 0;
           }
         }
       });
-  }, [products, selectedFamily, stockFilter, searchQuery, sortOption, showOnlyFavorites, favorites, showOnlyTopSellers]);
+  }, [products, selectedFamily, stockFilter, deferredSearchQuery, sortOption, showOnlyFavorites, favorites, showOnlyTopSellers]);
 
   // Reset pagination to page 1 whenever search, family, or stock filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedFamily, searchQuery, stockFilter, sortOption, showOnlyFavorites, showOnlyTopSellers]);
 
-  // Paginated Products (50 per page to optimize DOM rendering & browser scrolling)
-  const productsPerPage = 50;
+  // Responsive Products Per Page: 20 on mobile to conserve memory/RAM, 36 on desktop
+  const isMobileScreen = typeof window !== 'undefined' && window.innerWidth < 768;
+  const productsPerPage = isMobileScreen ? 20 : 36;
+
   const paginatedProducts = useMemo(() => {
     const startIndex = (currentPage - 1) * productsPerPage;
     return filteredProducts.slice(startIndex, startIndex + productsPerPage);
-  }, [filteredProducts, currentPage]);
+  }, [filteredProducts, currentPage, productsPerPage]);
 
   const totalPages = Math.ceil(filteredProducts.length / productsPerPage);
+
+  // Fast O(1) Cart Lookup Map to prevent O(N*M) array find on each card render
+  const showroomCartMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of cart) {
+      if (item?.product?.id) {
+        map[item.product.id] = item.quantity;
+      }
+    }
+    return map;
+  }, [cart]);
 
   // Cart operations
   const cartCount = useMemo(() => cart.reduce((s, i) => s + (i?.quantity || 0), 0), [cart]);
@@ -1581,7 +1666,7 @@ export default function App() {
     [cart]
   );
 
-  const handleAddToCart = (product: Product, quantityToAdd: number) => {
+  const handleAddToCart = useCallback((product: Product, quantityToAdd: number) => {
     if (!product || !product.id) return;
     setCart((prev) => {
       const existing = prev.find((item) => item?.product?.id === product.id);
@@ -1594,9 +1679,9 @@ export default function App() {
         return [...prev, { product, quantity: Math.min(product.stock, quantityToAdd) }];
       }
     });
-  };
+  }, []);
 
-  const handleDecreaseCartQuantity = (productId: string, quantityToDecrease: number) => {
+  const handleDecreaseCartQuantity = useCallback((productId: string, quantityToDecrease: number) => {
     setCart((prev) => {
       const existing = prev.find((item) => item?.product?.id === productId);
       if (!existing) return prev;
@@ -1608,7 +1693,7 @@ export default function App() {
         item?.product?.id === productId ? { ...item, quantity: newQty } : item
       );
     });
-  };
+  }, []);
 
   const handleUpdateCartQuantity = (productId: string, newQty: number) => {
     if (newQty <= 0) {
@@ -1720,8 +1805,10 @@ export default function App() {
       console.error(e);
     }
 
-    // Automatically trigger PDF download (hiding prices for non-approved/guest users)
-    downloadOrderPDF(newOrder, storeSettings, { hidePrices: !isPricesVisible });
+    // Automatically trigger PDF download (hiding prices for non-approved/guest users) via dynamic import to keep initial bundle ultra-light
+    import('./utils/pdfGenerator').then(({ downloadOrderPDF }) => {
+      downloadOrderPDF(newOrder, storeSettings, { hidePrices: !isPricesVisible });
+    }).catch(console.warn);
 
     // If offline: save to local queue and provide reassuring advice
     if (!isCurrentlyOnline) {
@@ -1894,6 +1981,10 @@ export default function App() {
     setSortOption('default');
     setShowOnlyFavorites(false);
     setShowOnlyTopSellers(false);
+    setCurrentPage(1);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   // 7. Customer Authentication & Application Handlers
@@ -2383,52 +2474,54 @@ export default function App() {
   // IF ADMIN VIEW: RENDER FULL ADMIN PORTAL PAGE
   if (currentView === 'admin') {
     return (
-      <AdminPortal
-        products={products}
-        orders={orders}
-        storeSettings={storeSettings}
-        customerApplications={customerApplications}
-        customerUsers={customerUsers}
-        adBanners={adBanners}
-        isAdPopupEnabled={isAdPopupEnabled}
-        onBackToStore={() => {
-          setCurrentView('store');
-          window.location.hash = '';
-        }}
-        onUpdateProducts={(updated) => {
-          lastMutationTimeRef.current = Date.now();
-          setProducts(updated);
-          syncProductsOnServer(updated).catch(console.warn);
-        }}
-        onAddProduct={handleAddProduct}
-        onUpdateProduct={handleUpdateProduct}
-        onDeleteProduct={handleDeleteProduct}
-        onDeleteOrder={handleDeleteOrder}
-        onBulkDeleteOrders={handleBulkDeleteOrders}
-        onDeleteApplication={handleDeleteApplication}
-        onUpdateSingleStock={handleUpdateSingleStock}
-        onUpdateOrderStatus={handleUpdateOrderStatus}
-        onApproveApplication={handleApproveApplication}
-        onRejectApplication={handleRejectApplication}
-        onToggleCustomerActive={handleToggleCustomerActive}
-        onDeleteCustomer={handleDeleteCustomer}
-        onUpdateCustomer={handleUpdateCustomer}
-        onResetCustomerPassword={handleResetCustomerPassword}
-        onCreateCustomer={handleCreateCustomer}
-        onImportCustomers={handleImportCustomers}
-        onClearOldOrders={handleClearOldOrders}
-        onUpdateOrders={(newOrders) => {
-          setOrders(newOrders);
-          syncOrdersOnServer(newOrders).catch(console.warn);
-        }}
-        onAddAdBanner={handleAddAdBanner}
-        onToggleAdBanner={handleToggleAdBanner}
-        onDeleteAdBanner={handleDeleteAdBanner}
-        onPreviewAdBanner={handlePreviewAdBanner}
-        onToggleAdPopupEnabled={handleToggleAdPopupEnabled}
-        onRestoreAllData={handleRestoreAllData}
-        onUpdateSettings={(newSettings) => setStoreSettings(newSettings)}
-      />
+      <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white font-bold text-sm">Chargement de l'administration Tulip...</div>}>
+        <AdminPortal
+          products={products}
+          orders={orders}
+          storeSettings={storeSettings}
+          customerApplications={customerApplications}
+          customerUsers={customerUsers}
+          adBanners={adBanners}
+          isAdPopupEnabled={isAdPopupEnabled}
+          onBackToStore={() => {
+            setCurrentView('store');
+            window.location.hash = '';
+          }}
+          onUpdateProducts={(updated) => {
+            lastMutationTimeRef.current = Date.now();
+            setProducts(updated);
+            syncProductsOnServer(updated).catch(console.warn);
+          }}
+          onAddProduct={handleAddProduct}
+          onUpdateProduct={handleUpdateProduct}
+          onDeleteProduct={handleDeleteProduct}
+          onDeleteOrder={handleDeleteOrder}
+          onBulkDeleteOrders={handleBulkDeleteOrders}
+          onDeleteApplication={handleDeleteApplication}
+          onUpdateSingleStock={handleUpdateSingleStock}
+          onUpdateOrderStatus={handleUpdateOrderStatus}
+          onApproveApplication={handleApproveApplication}
+          onRejectApplication={handleRejectApplication}
+          onToggleCustomerActive={handleToggleCustomerActive}
+          onDeleteCustomer={handleDeleteCustomer}
+          onUpdateCustomer={handleUpdateCustomer}
+          onResetCustomerPassword={handleResetCustomerPassword}
+          onCreateCustomer={handleCreateCustomer}
+          onImportCustomers={handleImportCustomers}
+          onClearOldOrders={handleClearOldOrders}
+          onUpdateOrders={(newOrders) => {
+            setOrders(newOrders);
+            syncOrdersOnServer(newOrders).catch(console.warn);
+          }}
+          onAddAdBanner={handleAddAdBanner}
+          onToggleAdBanner={handleToggleAdBanner}
+          onDeleteAdBanner={handleDeleteAdBanner}
+          onPreviewAdBanner={handlePreviewAdBanner}
+          onToggleAdPopupEnabled={handleToggleAdPopupEnabled}
+          onRestoreAllData={handleRestoreAllData}
+          onUpdateSettings={(newSettings) => setStoreSettings(newSettings)}
+        />
+      </Suspense>
     );
   }
 
@@ -2461,7 +2554,7 @@ export default function App() {
         onLogoutCustomer={handleLogoutCustomer}
         lang={currentLang}
         onSelectLanguage={handleSelectLanguage}
-        onOpenOrderTracking={() => setIsOrderTrackingOpen(true)}
+        onOpenOrderTracking={currentCustomer ? () => setIsOrderTrackingOpen(true) : undefined}
         currentInterface={currentInterface}
         onToggleInterface={handleSelectInterface}
         onOpenInterfaceChoiceModal={() => setIsInterfaceChoiceOpen(true)}
@@ -2528,6 +2621,20 @@ export default function App() {
         </div>
       )}
 
+      {/* Mobile Back Button Exit Confirmation Toast */}
+      {backExitPrompt && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-950/92 text-white px-4 py-2.5 rounded-full shadow-2xl border border-white/20 text-xs font-semibold backdrop-blur-md flex items-center gap-2 pointer-events-none animate-in fade-in duration-150">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+          <span>
+            {currentLang === 'ar'
+              ? 'اضغط مرة أخرى للرجوع أو الخروج من الصفحة'
+              : currentLang === 'en'
+              ? 'Press back again to exit'
+              : 'Appuyez à nouveau pour quitter'}
+          </span>
+        </div>
+      )}
+
       {/* Main Content Area: Showroom vs Quick Order View */}
       {currentInterface === 'quick' ? (
         <QuickOrderView
@@ -2535,6 +2642,7 @@ export default function App() {
           cart={cart}
           onAddToCart={handleAddToCart}
           onUpdateCartQuantity={handleUpdateCartQuantity}
+          onDecreaseCartQuantity={handleDecreaseCartQuantity}
           onOpenCart={() => setIsCartOpen(true)}
           onQuickView={setQuickViewProduct}
           onSwitchToShowroom={() => handleSelectInterface('showroom')}
@@ -2753,9 +2861,8 @@ export default function App() {
         ) : (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {paginatedProducts.map((product) => {
-                const inCartItem = cart.find((i) => i.product.id === product.id);
-                const cartQuantity = inCartItem ? inCartItem.quantity : 0;
+              {paginatedProducts.map((product, idx) => {
+                const cartQuantity = showroomCartMap[product.id] || 0;
 
                 return (
                   <ProductCard
@@ -2766,13 +2873,11 @@ export default function App() {
                     onDecreaseCartQuantity={handleDecreaseCartQuantity}
                     onQuickView={setQuickViewProduct}
                     isPricesVisible={isPricesVisible}
-                    onRequireLogin={() => {
-                      setCustomerAuthInitialTab('login');
-                      setIsCustomerAuthOpen(true);
-                    }}
+                    onRequireLogin={handleRequireLogin}
                     lang={currentLang}
                     isFavorite={favorites.includes(product.id)}
-                    onToggleFavorite={() => handleToggleFavorite(product.id)}
+                    onToggleFavorite={handleToggleFavorite}
+                    isPriority={idx < 4}
                   />
                 );
               })}
@@ -2989,17 +3094,19 @@ export default function App() {
                 <p className="text-rose-200/70 text-xs leading-relaxed">
                   Fournisseur professionnel de matières premières de parfumerie et flaconnage en Algérie.
                 </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    id="btn-customer-order-tracking-footer"
-                    onClick={() => setIsOrderTrackingOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#9f0e4e]/30 to-[#c2185b]/30 hover:opacity-95 text-rose-200 border border-[#c2185b]/50 text-xs font-semibold transition cursor-pointer shadow-xs"
-                  >
-                    <Truck className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Suivre mes Précommandes</span>
-                  </button>
-                </div>
+                {currentCustomer && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      id="btn-customer-order-tracking-footer"
+                      onClick={() => setIsOrderTrackingOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#9f0e4e]/30 to-[#c2185b]/30 hover:opacity-95 text-rose-200 border border-[#c2185b]/50 text-xs font-semibold transition cursor-pointer shadow-xs"
+                    >
+                      <Truck className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Suivre mes Précommandes</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Footer Language Selection */}
                 <div className="pt-2 border-t border-[#70083b]/40 flex items-center gap-2">
@@ -3076,160 +3183,146 @@ export default function App() {
         onAddToCart={handleAddToCart}
       />
 
-      <PreOrderModal
-        isOpen={isPreOrderModalOpen}
-        onClose={() => setIsPreOrderModalOpen(false)}
-        items={cart}
-        storeSettings={storeSettings}
-        currentCustomer={currentCustomer}
-        onSubmitOrder={handleSubmitOrder}
-        isProforma={isProformaMode}
-        isPricesVisible={isPricesVisible}
-        lang={currentLang}
-      />
+      {/* Suspense boundary for code-split modals */}
+      <Suspense fallback={null}>
+        <PreOrderModal
+          isOpen={isPreOrderModalOpen}
+          onClose={() => setIsPreOrderModalOpen(false)}
+          items={cart}
+          storeSettings={storeSettings}
+          currentCustomer={currentCustomer}
+          onSubmitOrder={handleSubmitOrder}
+          isProforma={isProformaMode}
+          isPricesVisible={isPricesVisible}
+          lang={currentLang}
+        />
 
-      <OrderConfirmationModal
-        isOpen={isConfirmationOpen}
-        onClose={() => setIsConfirmationOpen(false)}
-        order={recentOrder}
-        storeSettings={storeSettings}
-        onTrackOrder={() => {
-          setIsConfirmationOpen(false);
-          setIsOrderTrackingOpen(true);
-        }}
-        isPricesVisible={isPricesVisible}
-        lang={currentLang}
-        onOpenInstallGuide={() => {
-          setIsConfirmationOpen(false);
-          setIsPwaGuideOpen(true);
-        }}
-        deviceInfo={deviceInfo}
-      />
+        <OrderConfirmationModal
+          isOpen={isConfirmationOpen}
+          onClose={() => setIsConfirmationOpen(false)}
+          order={recentOrder}
+          storeSettings={storeSettings}
+          onTrackOrder={() => {
+            setIsConfirmationOpen(false);
+            setIsOrderTrackingOpen(true);
+          }}
+          isPricesVisible={isPricesVisible}
+          lang={currentLang}
+          deviceInfo={deviceInfo}
+        />
 
-      {/* Floating customer advisory banner: guides customers how to install PWA on their detected phone (No buttons in header/interface) */}
-      <PwaInstallAdviceBanner
-        lang={currentLang}
-        onOpenInstallGuide={() => setIsPwaGuideOpen(true)}
-        deviceInfo={deviceInfo}
-      />
+        {/* Language Selection Modal (Asks customer on first visit and remembers choice) */}
+        <LanguageSelectionModal
+          isOpen={isLanguageModalOpen}
+          currentLang={currentLang}
+          onSelectLanguage={handleConfirmLanguageSelection}
+        />
 
-      {/* PWA Phone Installation Step-by-Step Guide Modal (Android Chrome, Samsung Internet, iOS Safari) */}
-      <PwaInstallModal
-        isOpen={isPwaGuideOpen}
-        onClose={() => setIsPwaGuideOpen(false)}
-        deviceInfo={deviceInfo}
-      />
+        <OrderTrackingModal
+          isOpen={isOrderTrackingOpen}
+          onClose={() => setIsOrderTrackingOpen(false)}
+          orders={orders}
+          currentCustomer={currentCustomer}
+          storeSettings={storeSettings}
+          lang={currentLang}
+        />
 
-      {/* Language Selection Modal (Asks customer on first visit and remembers choice) */}
-      <LanguageSelectionModal
-        isOpen={isLanguageModalOpen}
-        currentLang={currentLang}
-        onSelectLanguage={handleConfirmLanguageSelection}
-      />
+        <ExcelSyncModal
+          isOpen={isExcelSyncOpen}
+          onClose={() => setIsExcelSyncOpen(false)}
+          products={products}
+          storeSettings={storeSettings}
+          onApplyInventory={handleApplyExcelInventory}
+          onUpdateSingleStock={handleUpdateSingleStock}
+        />
 
-      <OrderTrackingModal
-        isOpen={isOrderTrackingOpen}
-        onClose={() => setIsOrderTrackingOpen(false)}
-        orders={orders}
-        currentCustomer={currentCustomer}
-        storeSettings={storeSettings}
-        lang={currentLang}
-      />
+        <AdminOrdersModal
+          isOpen={isAdminOrdersOpen}
+          onClose={() => setIsAdminOrdersOpen(false)}
+          orders={orders}
+          storeSettings={storeSettings}
+          onUpdateOrderStatus={handleUpdateOrderStatus}
+          onDeleteOrder={handleDeleteOrder}
+        />
 
-      <ExcelSyncModal
-        isOpen={isExcelSyncOpen}
-        onClose={() => setIsExcelSyncOpen(false)}
-        products={products}
-        onApplyInventory={handleApplyExcelInventory}
-        onUpdateSingleStock={handleUpdateSingleStock}
-      />
+        <ProductDetailModal
+          product={quickViewProduct}
+          onClose={() => setQuickViewProduct(null)}
+          cartQuantity={
+            quickViewProduct
+              ? cart.find((i) => i.product.id === quickViewProduct.id)?.quantity || 0
+              : 0
+          }
+          onAddToCart={handleAddToCart}
+          isPricesVisible={isPricesVisible}
+          onRequireLogin={handleRequireLogin}
+          lang={currentLang}
+          isFavorite={quickViewProduct ? favorites.includes(quickViewProduct.id) : false}
+          onToggleFavorite={() => quickViewProduct && handleToggleFavorite(quickViewProduct.id)}
+        />
 
-      <AdminOrdersModal
-        isOpen={isAdminOrdersOpen}
-        onClose={() => setIsAdminOrdersOpen(false)}
-        orders={orders}
-        storeSettings={storeSettings}
-        onUpdateOrderStatus={handleUpdateOrderStatus}
-        onDeleteOrder={handleDeleteOrder}
-      />
+        {/* Interface Choice Modal (allows customer to choose between Showroom and Quick Order) */}
+        <InterfaceChoiceModal
+          isOpen={isInterfaceChoiceOpen}
+          onClose={() => setIsInterfaceChoiceOpen(false)}
+          currentInterface={currentInterface}
+          onSelectInterface={handleSelectInterface}
+          lang={currentLang}
+        />
 
-      <ProductDetailModal
-        product={quickViewProduct}
-        onClose={() => setQuickViewProduct(null)}
-        cartQuantity={
-          quickViewProduct
-            ? cart.find((i) => i.product.id === quickViewProduct.id)?.quantity || 0
-            : 0
-        }
-        onAddToCart={handleAddToCart}
-        isPricesVisible={isPricesVisible}
-        onRequireLogin={() => {
-          setCustomerAuthInitialTab('login');
-          setIsCustomerAuthOpen(true);
-        }}
-        lang={currentLang}
-        isFavorite={quickViewProduct ? favorites.includes(quickViewProduct.id) : false}
-        onToggleFavorite={() => quickViewProduct && handleToggleFavorite(quickViewProduct.id)}
-      />
+        {/* Customer Login & Registration Modal */}
+        <CustomerAuthModal
+          isOpen={isCustomerAuthOpen}
+          onClose={() => setIsCustomerAuthOpen(false)}
+          initialTab={customerAuthInitialTab}
+          applications={customerApplications}
+          existingApplications={customerApplications}
+          registeredCustomers={customerUsers}
+          storeSettings={storeSettings}
+          onLoginSuccess={(customer) => {
+            handleLoginSuccess(customer);
+            setIsCustomerAuthOpen(false);
+          }}
+          onRegisterSubmit={(appData) => {
+            handleRegisterSubmit(appData);
+          }}
+        />
 
-      {/* Interface Choice Modal (allows customer to choose between Showroom and Quick Order) */}
-      <InterfaceChoiceModal
-        isOpen={isInterfaceChoiceOpen}
-        onClose={() => setIsInterfaceChoiceOpen(false)}
-        currentInterface={currentInterface}
-        onSelectInterface={handleSelectInterface}
-        lang={currentLang}
-      />
+        {/* Advertising Popup Modal (shows random or previewed promo banner with slide navigation) */}
+        <AdPopupModal
+          isOpen={isAdPopupOpen}
+          onClose={handleCloseAdPopup}
+          banner={currentAdPopup}
+          banners={adBanners}
+          products={products}
+          isPricesVisible={isPricesVisible}
+          onRequireLogin={handleRequireLogin}
+          lang={currentLang}
+          onAddToCart={(prod, qty) => {
+            handleAddToCart(prod, qty);
+            setIsCartOpen(true);
+            setSyncToastMessage(`"${prod.name}" a été ajouté au panier !`);
+            setTimeout(() => setSyncToastMessage(null), 3000);
+          }}
+          onExplore={handleAdExplore}
+        />
 
-      {/* Customer Login & Registration Modal */}
-      <CustomerAuthModal
-        isOpen={isCustomerAuthOpen}
-        onClose={() => setIsCustomerAuthOpen(false)}
-        initialTab={customerAuthInitialTab}
-        applications={customerApplications}
-        existingApplications={customerApplications}
-        registeredCustomers={customerUsers}
-        storeSettings={storeSettings}
-        onLoginSuccess={(customer) => {
-          handleLoginSuccess(customer);
-          setIsCustomerAuthOpen(false);
-        }}
-        onRegisterSubmit={(appData) => {
-          handleRegisterSubmit(appData);
-        }}
-      />
-
-      {/* Advertising Popup Modal (shows random or previewed promo banner with slide navigation) */}
-      <AdPopupModal
-        isOpen={isAdPopupOpen}
-        onClose={handleCloseAdPopup}
-        banner={currentAdPopup}
-        banners={adBanners}
-        products={products}
-        onAddToCart={(prod, qty) => {
-          handleAddToCart(prod, qty);
-          setIsCartOpen(true);
-          setSyncToastMessage(`"${prod.name}" a été ajouté au panier !`);
-          setTimeout(() => setSyncToastMessage(null), 3000);
-        }}
-        onExplore={handleAdExplore}
-      />
-
-      {/* Admin Unlock Modal to reveal Excel import tools */}
-      <AdminLoginModal
-        isOpen={isAdminLoginOpen}
-        onClose={() => setIsAdminLoginOpen(false)}
-        onUnlock={() => {
-          setIsAdminMode(true);
-          setSyncToastMessage("Mode Gestionnaire activé. Outils d'administration débloqués.");
-          setTimeout(() => setSyncToastMessage(null), 4000);
-        }}
-        onSuccess={() => {
-          setIsAdminMode(true);
-          setSyncToastMessage("Mode Gestionnaire activé. Outils d'administration débloqués.");
-          setTimeout(() => setSyncToastMessage(null), 4000);
-        }}
-      />
+        {/* Admin Unlock Modal to reveal Excel import tools */}
+        <AdminLoginModal
+          isOpen={isAdminLoginOpen}
+          onClose={() => setIsAdminLoginOpen(false)}
+          onUnlock={() => {
+            setIsAdminMode(true);
+            setSyncToastMessage("Mode Gestionnaire activé. Outils d'administration débloqués.");
+            setTimeout(() => setSyncToastMessage(null), 4000);
+          }}
+          onSuccess={() => {
+            setIsAdminMode(true);
+            setSyncToastMessage("Mode Gestionnaire activé. Outils d'administration débloqués.");
+            setTimeout(() => setSyncToastMessage(null), 4000);
+          }}
+        />
+      </Suspense>
     </div>
   );
 }

@@ -38,6 +38,13 @@ import {
   FileArchive,
   X,
   MessageCircle,
+  Eye,
+  EyeOff,
+  Image as ImageIcon,
+  ExternalLink,
+  FolderOpen,
+  Upload,
+  AlertTriangle,
 } from 'lucide-react';
 import { Product, PreOrder, StoreSettings, AdminUser, CustomerApplication, CustomerUser, AdBanner, ManagerPermissions } from '../types';
 import { downloadOrderPDF, printOrderPDF, formatDZD } from '../utils/pdfGenerator';
@@ -55,7 +62,20 @@ import { AdminAnalytics } from './AdminAnalytics';
 import { AdminTelegramModal } from './AdminTelegramModal';
 import { IrreversibleConfirmModal } from './IrreversibleConfirmModal';
 import { TulipLogo } from './TulipLogo';
-import { checkSupabaseStatus, syncDatabaseToSupabase, fetchSyncData, syncAdminUsersOnServer } from '../utils/api';
+import {
+  checkSupabaseStatus,
+  syncDatabaseToSupabase,
+  exportDatabaseToBlobOnServer,
+  importDatabaseFromBlobOnServer,
+  fetchSyncData,
+  syncAdminUsersOnServer,
+  syncExtraitImagesFromBlob,
+  listExtraitImagesFromBlob,
+  BlobExtraitSyncResult,
+  compressAndMoveExtraitImagesFromBlob,
+  uploadAndCompressExtraitImage,
+  BlobCompressResult,
+} from '../utils/api';
 import {
   getClientSupabaseCredentials,
   directClientTestSupabase,
@@ -212,6 +232,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Login form state
   const [loginUsername, setLoginUsername] = useState('admin');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
   // Master Website Data Backup & Restore State (Security Section)
@@ -229,6 +250,219 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     exportDate?: string;
   } | null>(null);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
+
+  // Vercel Blob Storage - Backup & Media Export/Import States
+  const [blobExporting, setBlobExporting] = useState(false);
+  const [blobExportResult, setBlobExportResult] = useState<{ url: string; filename: string } | null>(null);
+  const [blobExportError, setBlobExportError] = useState<string | null>(null);
+  const [blobImportUrl, setBlobImportUrl] = useState('');
+  const [blobImporting, setBlobImporting] = useState(false);
+  const [blobImportMsg, setBlobImportMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Vercel Blob Extrait Images Association States
+  const [isBlobImagesModalOpen, setIsBlobImagesModalOpen] = useState(false);
+  const [blobFolderName, setBlobFolderName] = useState(storeSettings?.vercelBlobFolderName || 'extraits');
+  const [isSyncingBlobImages, setIsSyncingBlobImages] = useState(false);
+  const [blobSyncResult, setBlobSyncResult] = useState<BlobExtraitSyncResult | null>(null);
+  const [blobFilesList, setBlobFilesList] = useState<Array<{ pathname: string; url: string; filename: string; referenceCandidate: string; size: number }>>([]);
+  const [isLoadingBlobFiles, setIsLoadingBlobFiles] = useState(false);
+  const [blobFolderSaveNotice, setBlobFolderSaveNotice] = useState<string | null>(null);
+
+  // Vercel Blob Extrait Images Compression States
+  const [blobSourceFolder, setBlobSourceFolder] = useState('extraits-raw');
+  const [blobDeleteSourceAfter, setBlobDeleteSourceAfter] = useState(false);
+  const [isCompressingBlobImages, setIsCompressingBlobImages] = useState(false);
+  const [blobCompressResult, setBlobCompressResult] = useState<BlobCompressResult | null>(null);
+  const [isDirectUploading, setIsDirectUploading] = useState(false);
+  const [directUploadNotice, setDirectUploadNotice] = useState<string | null>(null);
+
+  const handleCompressAndMoveBlobImages = async () => {
+    setIsCompressingBlobImages(true);
+    setBlobCompressResult(null);
+    try {
+      const res = await compressAndMoveExtraitImagesFromBlob({
+        sourceFolder: blobSourceFolder.trim() || 'extraits-raw',
+        targetFolder: blobFolderName.trim() || 'extraits',
+        deleteSourceAfter: blobDeleteSourceAfter,
+        maxDimension: 1200,
+        quality: 82,
+      });
+      setBlobCompressResult(res);
+      // Automatically refresh catalog products if any were updated
+      if (res.success && res.matchedProductsCount > 0) {
+        const syncRes = await syncExtraitImagesFromBlob({
+          folderName: blobFolderName.trim() || 'extraits',
+          products,
+          saveToDatabase: true,
+        });
+        if (syncRes.success && syncRes.products) {
+          onUpdateProducts(syncRes.products);
+        }
+      }
+    } catch (err: any) {
+      setBlobCompressResult({
+        success: false,
+        processedCount: 0,
+        totalOriginalBytes: 0,
+        totalCompressedBytes: 0,
+        savedBytes: 0,
+        overallSavedPercent: 0,
+        matchedProductsCount: 0,
+        sourceFolder: blobSourceFolder,
+        targetFolder: blobFolderName,
+        error: err?.message || 'Erreur lors de la compression.',
+      });
+    } finally {
+      setIsCompressingBlobImages(false);
+    }
+  };
+
+  const handleDirectFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsDirectUploading(true);
+    setDirectUploadNotice(null);
+
+    let successCount = 0;
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const res = await uploadAndCompressExtraitImage({
+          fileName: file.name,
+          base64Data,
+          folderName: blobFolderName.trim() || 'extraits',
+        });
+
+        if (res.success) {
+          successCount++;
+        }
+      }
+
+      setDirectUploadNotice(`✅ ${successCount} image(s) compressée(s) et envoyée(s) avec succès dans Vercel Blob !`);
+      // Refresh matching
+      const syncRes = await syncExtraitImagesFromBlob({
+        folderName: blobFolderName.trim() || 'extraits',
+        products,
+        saveToDatabase: true,
+      });
+      if (syncRes.success && syncRes.products) {
+        onUpdateProducts(syncRes.products);
+      }
+    } catch (err: any) {
+      setDirectUploadNotice(`❌ Erreur: ${err?.message || 'Échec du téléversement.'}`);
+    } finally {
+      setIsDirectUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleSyncBlobImages = async () => {
+    setIsSyncingBlobImages(true);
+    try {
+      const folder = blobFolderName.trim() || 'extraits';
+      const res = await syncExtraitImagesFromBlob({
+        folderName: folder,
+        products,
+        saveToDatabase: true,
+      });
+      setBlobSyncResult(res);
+      if (res.success && res.products) {
+        onUpdateProducts(res.products);
+      }
+    } catch (err: any) {
+      setBlobSyncResult({
+        success: false,
+        isConfigured: false,
+        folderName: blobFolderName,
+        totalExtraits: products.filter((p) => p.family === 'Extrait').length,
+        matchedCount: 0,
+        unmatchedCount: 0,
+        error: err.message || 'Erreur lors de la synchronisation.',
+      });
+    } finally {
+      setIsSyncingBlobImages(false);
+    }
+  };
+
+  const handleFetchBlobFiles = async () => {
+    setIsLoadingBlobFiles(true);
+    try {
+      const folder = blobFolderName.trim() || 'extraits';
+      const res = await listExtraitImagesFromBlob({ folder });
+      if (res.success && res.files) {
+        setBlobFilesList(res.files);
+      }
+    } catch (e) {
+      console.warn(e);
+    } finally {
+      setIsLoadingBlobFiles(false);
+    }
+  };
+
+  const handleSaveBlobFolderName = () => {
+    if (onUpdateSettings) {
+      const updated = { ...storeSettings, vercelBlobFolderName: blobFolderName.trim() || 'extraits' };
+      onUpdateSettings(updated);
+      setBlobFolderSaveNotice("Nom du dossier enregistré !");
+      setTimeout(() => setBlobFolderSaveNotice(null), 2500);
+    }
+  };
+
+  const handleExportToBlob = async () => {
+    setBlobExporting(true);
+    setBlobExportError(null);
+    setBlobExportResult(null);
+    try {
+      const res = await exportDatabaseToBlobOnServer();
+      if (res.success && res.url) {
+        setBlobExportResult({ url: res.url, filename: res.filename || 'backup.json' });
+      } else {
+        setBlobExportError(res.error || "Échec de l'exportation vers Vercel Blob.");
+      }
+    } catch (err: any) {
+      setBlobExportError(err?.message || "Erreur lors de l'exportation.");
+    } finally {
+      setBlobExporting(false);
+    }
+  };
+
+  const handleImportFromBlob = async () => {
+    if (!blobImportUrl.trim()) {
+      setBlobImportMsg({ type: 'error', text: 'Veuillez saisir une URL de sauvegarde Vercel Blob.' });
+      return;
+    }
+    setBlobImporting(true);
+    setBlobImportMsg(null);
+    try {
+      const res = await importDatabaseFromBlobOnServer(blobImportUrl.trim());
+      if (res.success) {
+        setBlobImportMsg({
+          type: 'success',
+          text: res.message || 'La base de données a été restaurée avec succès depuis Vercel Blob !',
+        });
+        if (typeof onUpdateProducts === 'function' && res.data?.products) {
+          onUpdateProducts(res.data.products);
+        }
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else {
+        setBlobImportMsg({ type: 'error', text: res.error || "Échec de l'importation." });
+      }
+    } catch (err: any) {
+      setBlobImportMsg({ type: 'error', text: err?.message || "Erreur lors de l'importation." });
+    } finally {
+      setBlobImporting(false);
+    }
+  };
 
   // Supabase Cloud Storage Status State
   const [supabaseStatus, setSupabaseStatus] = useState<{
@@ -415,6 +649,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       }
     };
     syncUsersWithBackend();
+    refreshSupabaseStatus();
   }, []);
 
   // Persist session
@@ -480,6 +715,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
   const handleLogout = () => {
     setCurrentUser(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY_ADMIN_SESSION);
+    } catch (e) {
+      console.error(e);
+    }
+    if (onBackToStore) {
+      onBackToStore();
+    }
   };
 
   // Handle Password Change
@@ -618,12 +861,35 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       // User directive:
       // "about the import excel we will erace all the inventory of Extrait and remplace it with the new one"
       // "about 'flacon' we will separate them from the excel import and allow to add them manually"
-      const newExtraits: Product[] = parsed.map((newP) => ({
-        ...newP,
-        family: 'Extrait' as const,
-        unit: newP.unit || '1g (Contenant 100g)',
-        lastUpdated: new Date().toISOString(),
-      }));
+      // All imported lines become Extraits
+      let newExtraits: Product[] = parsed.map((newP) => {
+        const existing = products.find((ex) => ex.code === newP.code && ex.family === 'Extrait');
+        return {
+          ...newP,
+          family: 'Extrait' as const,
+          unit: newP.unit || '1g (Contenant 100g)',
+          imageUrl: existing?.imageUrl || newP.imageUrl || '/tulip-extrait-default.jpg',
+          lastUpdated: new Date().toISOString(),
+        };
+      });
+
+      // Automatically associate each extrait with its image in Vercel Blob folder
+      let matchedBlobCount = 0;
+      try {
+        const folder = storeSettings?.vercelBlobFolderName || blobFolderName || 'extraits';
+        const blobSync = await syncExtraitImagesFromBlob({
+          products: newExtraits,
+          folderName: folder,
+          saveToDatabase: false,
+        });
+        if (blobSync.success && blobSync.products) {
+          newExtraits = blobSync.products.filter((p) => p.family === 'Extrait');
+          matchedBlobCount = blobSync.matchedCount;
+          setBlobSyncResult(blobSync);
+        }
+      } catch (blobErr) {
+        console.warn('[AdminPortal] Vercel Blob auto-association note:', blobErr);
+      }
 
       // Preserve all existing manually added Flacons and Accessories
       const existingFlacons = products.filter((p) => p.family === 'Flacon');
@@ -633,7 +899,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       onUpdateProducts(updated);
 
       setExcelSuccess(
-        `${newExtraits.length} Extraits importés avec succès. L'ancien inventaire d'extraits a été remplacé, et vos ${existingFlacons.length} modèles de flacons et ${existingAccessories.length} accessoires restent conservés.`
+        `${newExtraits.length} Extraits importés avec succès${
+          matchedBlobCount > 0
+            ? ` (${matchedBlobCount} photos associées automatiquement depuis le dossier Vercel Blob "${storeSettings?.vercelBlobFolderName || blobFolderName || 'extraits'}")`
+            : ''
+        }. L'ancien inventaire d'extraits a été remplacé, et vos ${existingFlacons.length} modèles de flacons et ${existingAccessories.length} accessoires restent conservés.`
       );
     } catch (err: any) {
       setExcelError(err.message || "Erreur lors de l'analyse du fichier Excel.");
@@ -1048,14 +1318,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 </label>
                 <div className="relative">
                   <input
-                    type="password"
+                    type={showLoginPassword ? 'text' : 'password'}
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="Entrez votre mot de passe"
                     required
                     autoFocus
-                    className="w-full pl-3 pr-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                    className="w-full pl-3 pr-10 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition p-1 cursor-pointer"
+                    aria-label={showLoginPassword ? 'Masquer' : 'Afficher'}
+                    title={showLoginPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  >
+                    {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -1073,6 +1352,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <Lock className="w-4 h-4" />
                 <span>Connexion à l'Administration</span>
               </button>
+
+              {onBackToStore && (
+                <button
+                  type="button"
+                  onClick={onBackToStore}
+                  className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2 border border-slate-700/80"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Retour à la Boutique</span>
+                </button>
+              )}
             </form>
           </div>
         </div>
@@ -1340,6 +1630,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      onClick={() => setIsBlobImagesModalOpen(true)}
+                      className="px-3 py-1.5 rounded-lg bg-sky-950/60 hover:bg-sky-900/80 text-sky-300 text-xs font-semibold flex items-center gap-1.5 border border-sky-700/60 transition cursor-pointer shadow-sm"
+                      title="Gérer et associer les photos des extraits depuis le dossier Vercel Blob"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Photos Vercel Blob</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-sky-900 text-sky-200 font-mono">
+                        {storeSettings?.vercelBlobFolderName || blobFolderName || 'extraits'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={downloadSampleExcelTemplate}
                       className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
                     >
@@ -1385,7 +1688,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     Cliquez ou glissez l'export Excel de votre caisse ici
                   </span>
                   <span className="text-[11px] text-slate-400 mt-1">
-                    L'Agent IA détectera automatiquement les extraits et proposera de générer leurs photos studio
+                    Les extraits importés sont automatiquement associés à leurs photos dans Vercel Blob (ex: <code className="text-emerald-300 font-mono">P115.jpg</code>)
                   </span>
                 </div>
 
@@ -2160,13 +2463,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-bold text-white">Stockage Cloud Supabase (Vercel & Multi-Appareils)</h4>
-                            
-                            
-                            
+                            <h4 className="text-sm font-bold text-white">Stockage Cloud Supabase (Données & Logins)</h4>
                           </div>
                           <p className="text-xs text-slate-400 mt-0.5">
-                            Stockage persistant universel pour hébergement Vercel sans perte de données aux redémarrages.
+                            Stockage persistant pour les comptes, mots de passe, commandes, sécurité et produits.
                           </p>
                         </div>
                       </div>
@@ -2246,6 +2546,101 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                           Fichier SQL inclus : <span className="font-mono text-emerald-400">supabase-schema.sql</span>
                         </div>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* VERCEL BLOB STORAGE - CLOUD BACKUPS & MEDIA EXPORT / IMPORT */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900/90 via-rose-950/20 to-slate-900/90 border border-rose-500/30 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+                          <Database className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-bold text-white">Stockage Cloud Vercel Blob (Sauvegardes & Médias)</h4>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Sauvegardes centralisées et hébergement optimisé des médias pour Tulip Fragrance Company.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleExportToBlob}
+                          disabled={blobExporting}
+                          className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:bg-rose-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition cursor-pointer"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${blobExporting ? 'animate-spin' : ''}`} />
+                          <span>{blobExporting ? 'Sauvegarde en cours...' : 'Créer Sauvegarde Cloud'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {blobExportResult && (
+                      <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs space-y-2">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>Sauvegarde créée avec succès sur Vercel Blob !</span>
+                        </div>
+                        <div className="bg-slate-950 p-2 rounded border border-slate-800 font-mono text-[10px] break-all select-all flex items-center justify-between">
+                          <span>{blobExportResult.url}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          Conservez cette URL pour restaurer ou copier l'état du site sur un autre appareil à tout moment.
+                        </p>
+                      </div>
+                    )}
+
+                    {blobExportError && (
+                      <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-rose-400" />
+                        <span>{blobExportError}</span>
+                      </div>
+                    )}
+
+                    {/* Vercel Blob Import Box */}
+                    <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-850 space-y-3">
+                      <label className="block text-xs font-bold text-slate-300">
+                        Restaurer / Importer une Sauvegarde Cloud Tulip
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="url"
+                          value={blobImportUrl}
+                          onChange={(e) => setBlobImportUrl(e.target.value)}
+                          placeholder="Collez l'URL Vercel Blob de votre fichier de sauvegarde .json"
+                          className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleImportFromBlob}
+                          disabled={blobImporting}
+                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                        >
+                          <HardDriveDownload className={`w-3.5 h-3.5 text-rose-400 ${blobImporting ? 'animate-bounce' : ''}`} />
+                          <span>{blobImporting ? 'Restauration...' : 'Restaurer'}</span>
+                        </button>
+                      </div>
+
+                      {blobImportMsg && (
+                        <div
+                          className={`p-3 rounded-xl text-xs flex items-center gap-2 animate-in fade-in ${
+                            blobImportMsg.type === 'success'
+                              ? 'bg-emerald-950/70 border border-emerald-500/50 text-emerald-300'
+                              : 'bg-rose-950/70 border border-rose-800 text-rose-300'
+                          }`}
+                        >
+                          {blobImportMsg.type === 'success' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-rose-400" />
+                          )}
+                          <span>{blobImportMsg.text}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -2824,6 +3219,421 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         storeSettings={storeSettings}
         onUpdateSettings={onUpdateSettings}
       />
+
+      {/* Vercel Blob Extraits Images Modal */}
+      {isBlobImagesModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="p-4 sm:p-5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center border border-sky-500/30">
+                  <ImageIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                    <span>Association Photos Extraits • Vercel Blob</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] bg-sky-950 text-sky-300 border border-sky-800 font-mono">
+                      CDN Automatique
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Reliez chaque extrait à sa photo officielle selon sa référence (ex : <code className="text-sky-300 font-mono">P115.jpg</code>)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBlobImagesModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs text-slate-300">
+              {/* Folder Configuration Box */}
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="font-bold text-white block mb-0.5">
+                      Dossier Vercel Blob pour les Extraits
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      Nom du dossier où sont stockées vos images dans Vercel Blob
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={blobFolderName}
+                      onChange={(e) => setBlobFolderName(e.target.value)}
+                      placeholder="extraits"
+                      className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-mono text-xs w-36 focus:outline-hidden focus:ring-1 focus:ring-sky-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveBlobFolderName}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 rounded-lg border border-slate-700 font-semibold transition cursor-pointer"
+                    >
+                      Enregistrer
+                    </button>
+                  </div>
+                </div>
+
+                {blobFolderSaveNotice && (
+                  <div className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{blobFolderSaveNotice}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Compression & Transfer Pipeline Card */}
+              <div className="p-4 rounded-xl bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950/20 border border-amber-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span className="font-bold text-white text-xs">
+                      Compression & Déplacement Automatique (WebP HD)
+                    </span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/80 font-mono">
+                    Moteur Sharp
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Déposez vos photos brutes dans un dossier temporaire sur Vercel Blob (ex: <code className="text-amber-300 font-mono">extraits-raw</code> ou <code className="text-amber-300 font-mono">blob extrait images before compress</code>). Ce module télécharge chaque photo, la compresse en WebP HD (réduction de 85 à 95% du poids), la déplace vers le dossier officiel <code className="text-sky-300 font-mono">{blobFolderName || 'extraits'}</code> et la relie au catalogue.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                      Dossier Source (Photos brutes / avant compression) :
+                    </label>
+                    <input
+                      type="text"
+                      value={blobSourceFolder}
+                      onChange={(e) => setBlobSourceFolder(e.target.value)}
+                      placeholder="extraits-raw"
+                      className="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                      Dossier Cible (Photos compressées) :
+                    </label>
+                    <input
+                      type="text"
+                      value={blobFolderName}
+                      disabled
+                      className="w-full px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-400 font-mono text-xs cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="chk-delete-source"
+                    checked={blobDeleteSourceAfter}
+                    onChange={(e) => setBlobDeleteSourceAfter(e.target.checked)}
+                    className="rounded border-slate-700 text-amber-500 focus:ring-0 cursor-pointer"
+                  />
+                  <label htmlFor="chk-delete-source" className="text-[11px] text-slate-300 cursor-pointer">
+                    Supprimer les photos brutes d'origine après compression pour libérer de l'espace Vercel Blob
+                  </label>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCompressAndMoveBlobImages}
+                    disabled={isCompressingBlobImages}
+                    className="flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-amber-950/40 cursor-pointer disabled:opacity-50 text-xs"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isCompressingBlobImages ? 'animate-spin' : ''}`} />
+                    <span>
+                      {isCompressingBlobImages
+                        ? 'Compression et transfert en cours...'
+                        : `🗜️ Compresser & Déplacer vers "${blobFolderName || 'extraits'}"`}
+                    </span>
+                  </button>
+
+                  <label className="py-2.5 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer text-xs">
+                    <Upload className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{isDirectUploading ? 'Envoi...' : 'Téléverser & Compresser depuis PC'}</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handleDirectFileUpload}
+                      disabled={isDirectUploading}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {directUploadNotice && (
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-200">
+                    {directUploadNotice}
+                  </div>
+                )}
+
+                {/* Compression Result Banner */}
+                {blobCompressResult && (
+                  <div
+                    className={`p-3 rounded-xl border text-xs space-y-1.5 ${
+                      blobCompressResult.success
+                        ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                        : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+                    }`}
+                  >
+                    <div className="font-bold flex items-center gap-1.5">
+                      {blobCompressResult.success ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>Rapport de compression réussi</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle className="w-4 h-4 text-rose-400" />
+                          <span>Notice de compression</span>
+                        </>
+                      )}
+                    </div>
+                    {blobCompressResult.message && <p>{blobCompressResult.message}</p>}
+                    {blobCompressResult.error && <p className="text-rose-300">{blobCompressResult.error}</p>}
+
+                    {blobCompressResult.processedCount > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
+                        <div className="p-2 bg-slate-900/80 rounded-lg border border-slate-800">
+                          <span className="text-slate-400 block text-[10px]">Photos</span>
+                          <span className="font-bold text-white">{blobCompressResult.processedCount}</span>
+                        </div>
+                        <div className="p-2 bg-slate-900/80 rounded-lg border border-slate-800">
+                          <span className="text-slate-400 block text-[10px]">Poids initial</span>
+                          <span className="font-bold text-white">{(blobCompressResult.totalOriginalBytes / (1024 * 1024)).toFixed(1)} Mo</span>
+                        </div>
+                        <div className="p-2 bg-slate-900/80 rounded-lg border border-slate-800">
+                          <span className="text-slate-400 block text-[10px]">Poids WebP</span>
+                          <span className="font-bold text-emerald-400">{(blobCompressResult.totalCompressedBytes / (1024 * 1024)).toFixed(1)} Mo</span>
+                        </div>
+                        <div className="p-2 bg-slate-900/80 rounded-lg border border-slate-800">
+                          <span className="text-slate-400 block text-[10px]">Économie</span>
+                          <span className="font-bold text-emerald-300">-{blobCompressResult.overallSavedPercent}%</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={handleSyncBlobImages}
+                  disabled={isSyncingBlobImages}
+                  className="py-3 px-4 bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-500 hover:to-sky-600 text-white font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-sky-900/30 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isSyncingBlobImages ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingBlobImages ? 'Association en cours...' : '🔄 Scanner & Associer les images'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleFetchBlobFiles}
+                  disabled={isLoadingBlobFiles}
+                  className="py-3 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-xl border border-slate-700 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <FolderOpen className="w-4 h-4 text-sky-400" />
+                  <span>{isLoadingBlobFiles ? 'Chargement...' : '📂 Voir les fichiers dans Vercel Blob'}</span>
+                </button>
+              </div>
+
+              {/* Instructions Guide */}
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
+                <span className="font-bold text-white text-xs flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  Comment fonctionne la liaison automatique ?
+                </span>
+                <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-400 leading-relaxed">
+                  <li>
+                    Dans votre console <strong className="text-slate-200">Vercel &gt; Storage &gt; Blob</strong>, créez un dossier nommé <code className="bg-slate-800 px-1 py-0.5 rounded text-sky-300 font-mono">{blobFolderName || 'extraits'}</code>.
+                  </li>
+                  <li>
+                    Déposez les images en les nommant selon la référence de l'extrait (ex : <code className="bg-slate-800 px-1 py-0.5 rounded text-emerald-300 font-mono">P115.jpg</code>, <code className="bg-slate-800 px-1 py-0.5 rounded text-emerald-300 font-mono">P115.png</code>, <code className="bg-slate-800 px-1 py-0.5 rounded text-emerald-300 font-mono">P115.webp</code>).
+                  </li>
+                  <li>
+                    Lors de chaque <strong className="text-slate-200">Import Excel</strong> ou en cliquant sur <strong className="text-slate-200">"Scanner &amp; Associer"</strong>, chaque extrait portant cette référence est automatiquement lié à son image CDN.
+                  </li>
+                </ol>
+              </div>
+
+              {/* Sync Results Display */}
+              {blobSyncResult && (
+                <div className={`p-4 rounded-xl border space-y-3 ${
+                  blobSyncResult.success
+                    ? 'bg-slate-950 border-emerald-500/40'
+                    : 'bg-rose-950/40 border-rose-800'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs flex items-center gap-1.5 text-white">
+                      {blobSyncResult.success ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-rose-400" />
+                      )}
+                      <span>Résultat de la synchronisation</span>
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      Dossier : <code className="text-sky-300 font-mono">{blobSyncResult.folderName}</code>
+                    </span>
+                  </div>
+
+                  {blobSyncResult.message && (
+                    <p className="text-xs text-emerald-300 font-medium">
+                      {blobSyncResult.message}
+                    </p>
+                  )}
+
+                  {blobSyncResult.error && (
+                    <p className="text-xs text-rose-300">
+                      {blobSyncResult.error}
+                    </p>
+                  )}
+
+                  {blobSyncResult.success && (
+                    <div className="grid grid-cols-3 gap-2 text-center pt-1">
+                      <div className="p-2 rounded-lg bg-emerald-950/50 border border-emerald-800/50">
+                        <span className="text-[10px] text-emerald-400 block font-semibold">Associées</span>
+                        <span className="text-lg font-bold text-white">{blobSyncResult.matchedCount}</span>
+                      </div>
+                      <div className="p-2 rounded-lg bg-amber-950/50 border border-amber-800/50">
+                        <span className="text-[10px] text-amber-400 block font-semibold">Sans photo</span>
+                        <span className="text-lg font-bold text-white">{blobSyncResult.unmatchedCount}</span>
+                      </div>
+                      <div className="p-2 rounded-lg bg-sky-950/50 border border-sky-800/50">
+                        <span className="text-[10px] text-sky-400 block font-semibold">Images Dossier</span>
+                        <span className="text-lg font-bold text-white">{blobSyncResult.totalImagesInFolder || 0}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Matched Preview */}
+                  {blobSyncResult.matchedList && blobSyncResult.matchedList.length > 0 && (
+                    <div className="space-y-1.5 pt-2">
+                      <span className="text-[11px] font-bold text-slate-300 block">
+                        Extraits reliés avec succès ({blobSyncResult.matchedList.length}) :
+                      </span>
+                      <div className="max-h-36 overflow-y-auto space-y-1 pr-1 font-mono text-[11px]">
+                        {blobSyncResult.matchedList.map((m, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between p-1.5 rounded-lg bg-slate-900 border border-slate-800"
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <img
+                                src={m.imageUrl}
+                                alt={m.code}
+                                className="w-6 h-6 object-cover rounded border border-slate-700 shrink-0"
+                              />
+                              <span className="text-emerald-400 font-bold">{m.code}</span>
+                              <span className="text-slate-400 truncate text-[10px] font-sans">{m.name}</span>
+                            </div>
+                            <span className="text-slate-500 text-[10px] shrink-0 font-sans">
+                              {m.filename}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Unmatched Codes Warning */}
+                  {blobSyncResult.unmatchedCodes && blobSyncResult.unmatchedCodes.length > 0 && (
+                    <div className="p-2.5 rounded-lg bg-amber-950/30 border border-amber-800/40 text-[11px] space-y-1">
+                      <span className="text-amber-300 font-bold block">
+                        Extraits en attente d'image dans Vercel Blob ({blobSyncResult.unmatchedCodes.length}) :
+                      </span>
+                      <p className="text-slate-400 text-[10px]">
+                        Pour afficher leurs photos, déposez des fichiers nommés avec ces références (ex : <code className="text-amber-200">{blobSyncResult.unmatchedCodes[0]}.jpg</code>) :
+                      </p>
+                      <div className="flex flex-wrap gap-1 pt-1 max-h-20 overflow-y-auto font-mono text-[10px]">
+                        {blobSyncResult.unmatchedCodes.map((c, i) => (
+                          <span
+                            key={i}
+                            className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-amber-300"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Blob Files List (When user clicked "Voir les fichiers") */}
+              {blobFilesList.length > 0 && (
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-white">
+                      Fichiers détectés dans "{blobFolderName || 'extraits'}" ({blobFilesList.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setBlobFilesList([])}
+                      className="text-[10px] text-slate-500 hover:text-white cursor-pointer"
+                    >
+                      Masquer
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                    {blobFilesList.map((f, i) => (
+                      <div
+                        key={i}
+                        className="p-2 rounded-lg bg-slate-900 border border-slate-800 flex items-center gap-2 overflow-hidden"
+                      >
+                        <img
+                          src={f.url}
+                          alt={f.filename}
+                          className="w-8 h-8 rounded object-cover border border-slate-700 shrink-0"
+                        />
+                        <div className="truncate">
+                          <span className="text-white font-bold text-[10px] block truncate font-mono">
+                            {f.filename}
+                          </span>
+                          <span className="text-sky-400 text-[9px] block">
+                            Réf : {f.referenceCandidate}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">
+                Tulip Fragrance Company • Vercel Blob CDN Integration
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsBlobImagesModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Global Irreversible Confirmation Modal (Can't undo - Direct DB rewrite) */}
       <IrreversibleConfirmModal

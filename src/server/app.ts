@@ -6,6 +6,8 @@ import dotenv from "dotenv";
 import compression from "compression";
 import * as storeDb from "./storeDb";
 import * as supabaseDb from "./supabaseDb";
+import { put, list, del } from "@vercel/blob";
+import sharp from "sharp";
 
 dotenv.config();
 
@@ -1452,6 +1454,729 @@ async function sendTelegramAccessRequestNotification(applicant: any) {
     }
   });
 
+
+// Vercel Blob Storage - Media Upload, Import & Export
+app.post("/api/media/upload", async (req, res) => {
+  try {
+    const { base64, filename = "upload.webp" } = req.body;
+    if (!base64 || typeof base64 !== 'string') {
+      return res.status(400).json({ error: "Données base64 manquantes." });
+    }
+
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
+      console.warn("[Media Upload] BLOB_READ_WRITE_TOKEN is missing. Returning raw base64 dataUrl as fallback.");
+      return res.json({
+        success: true,
+        url: base64,
+        fallback: true,
+        message: "Stocké localement car BLOB_READ_WRITE_TOKEN n'est pas configuré."
+      });
+    }
+
+    const matches = base64.match(/^data:([A-Za-z0-9\-+\/]+);base64,(.+)$/);
+    let buffer: Buffer;
+    let contentType = "image/webp";
+
+    if (matches && matches.length === 3) {
+      contentType = matches[1];
+      buffer = Buffer.from(matches[2], 'base64');
+    } else {
+      buffer = Buffer.from(base64, 'base64');
+    }
+
+    let finalFilename = filename;
+
+    // Server-side Image Optimization & Compression via Sharp to reduce transfer sizes/egress
+    if (contentType.startsWith("image/")) {
+      try {
+        const sharp = require('sharp');
+        const optimizedBuffer = await sharp(buffer)
+          .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 65, effort: 4 })
+          .toBuffer();
+        
+        buffer = optimizedBuffer;
+        contentType = "image/webp";
+        // Ensure web-optimized WebP extension
+        if (!finalFilename.endsWith(".webp")) {
+          const baseName = finalFilename.replace(/\.[^/.]+$/, "");
+          finalFilename = `${baseName}.webp`;
+        }
+      } catch (sharpError) {
+        console.warn("[Media Upload] Sharp compression notice (using raw buffer instead):", sharpError);
+      }
+    }
+
+    const uniqueFilename = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${finalFilename}`;
+
+    const blob = await put(`media/${uniqueFilename}`, buffer, {
+      access: 'public',
+      contentType,
+      token,
+    });
+
+    return res.json({
+      success: true,
+      url: blob.url,
+      message: "Image mise en ligne avec succès sur Vercel Blob !"
+    });
+  } catch (err: any) {
+    console.error("[Media Upload] Error uploading to Vercel Blob:", err);
+    return res.status(500).json({ error: "Erreur lors de la mise en ligne du fichier: " + (err.message || String(err)) });
+  }
+});
+
+app.post("/api/backup/export-blob", async (req, res) => {
+  try {
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
+      return res.status(400).json({ error: "Vercel Blob n'est pas configuré. BLOB_READ_WRITE_TOKEN est requis." });
+    }
+
+    const db = await storeDb.loadDatabaseAsync(true);
+    const dbString = JSON.stringify(db, null, 2);
+    const buffer = Buffer.from(dbString, 'utf-8');
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `backup-tulip-${dateStr}.json`;
+
+    const blob = await put(`backups/${filename}`, buffer, {
+      access: 'public',
+      contentType: 'application/json',
+      token,
+    });
+
+    res.json({
+      success: true,
+      url: blob.url,
+      filename,
+      message: "Sauvegarde de la base de données exportée avec succès sur Vercel Blob !"
+    });
+  } catch (err: any) {
+    console.error("[Backup Export] Vercel Blob export error:", err);
+    res.status(500).json({ error: "Erreur lors de l'exportation: " + (err.message || String(err)) });
+  }
+});
+
+app.post("/api/backup/import-blob", async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+      return res.status(400).json({ error: "URL de sauvegarde Vercel Blob requise." });
+    }
+
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      return res.status(400).json({ error: "Impossible de récupérer le fichier de sauvegarde à l'adresse indiquée." });
+    }
+
+    const backup = await resp.json();
+    if (!backup || typeof backup !== 'object' || !Array.isArray(backup.products)) {
+      return res.status(400).json({ error: "Le fichier de sauvegarde récupéré n'est pas un fichier de sauvegarde Tulip valide." });
+    }
+
+    const restored = await storeDb.restoreDatabase(backup);
+    broadcastServerEvent("database:restored", { lastUpdated: restored.lastUpdated });
+
+    res.json({
+      success: true,
+      message: "Base de données importée et restaurée avec succès depuis Vercel Blob !",
+      data: {
+        products: restored.products,
+        orders: restored.orders,
+        customerApplications: restored.customerApplications,
+        customerUsers: restored.customerUsers,
+        storeSettings: restored.storeSettings,
+        adBanners: restored.adBanners,
+        lastUpdated: restored.lastUpdated,
+      }
+    });
+  } catch (err: any) {
+    console.error("[Backup Import] Vercel Blob import error:", err);
+    res.status(500).json({ error: "Erreur lors de l'importation: " + (err.message || String(err)) });
+  }
+});
+
+// Helper functions for Vercel Blob Extrait Image Association
+function normalizeReferenceKey(str: string): string {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function extractReferenceVariants(str: string): string[] {
+  const norm = normalizeReferenceKey(str);
+  if (!norm) return [];
+  const variants = new Set<string>([norm]);
+  if (norm.startsWith('ext')) variants.add(norm.slice(3));
+  if (norm.startsWith('art')) variants.add(norm.slice(3));
+  if (norm.startsWith('prod')) variants.add(norm.slice(4));
+  return Array.from(variants).filter(Boolean);
+}
+
+// 1. Check Vercel Blob Status
+app.get("/api/blob/status", async (req, res) => {
+  try {
+    const db = await storeDb.loadDatabaseAsync(false);
+    const token = db.storeSettings?.vercelBlobToken || process.env.BLOB_READ_WRITE_TOKEN;
+    const folder = (db.storeSettings?.vercelBlobFolderName || 'extraits').trim();
+
+    res.json({
+      configured: Boolean(token),
+      hasEnvToken: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
+      folderName: folder,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+// 2. List Extrait Images in Vercel Blob Folder
+app.get("/api/blob/list-extrait-images", async (req, res) => {
+  try {
+    const db = await storeDb.loadDatabaseAsync(false);
+    const token = (req.query.token as string) || db.storeSettings?.vercelBlobToken || process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
+      return res.status(200).json({
+        success: false,
+        isConfigured: false,
+        count: 0,
+        files: [],
+        error: "Vercel Blob n'est pas configuré. BLOB_READ_WRITE_TOKEN est requis.",
+      });
+    }
+
+    let folder = ((req.query.folder as string) || db.storeSettings?.vercelBlobFolderName || 'extraits').trim();
+    folder = folder.replace(/^\/+|\/+$/g, '');
+    const folderPrefix = folder ? `${folder}/` : '';
+
+    let allBlobs: any[] = [];
+    let cursor: string | undefined = undefined;
+
+    try {
+      do {
+        const result = await list({
+          prefix: folderPrefix || undefined,
+          limit: 1000,
+          cursor,
+          token,
+        });
+        allBlobs = allBlobs.concat(result.blobs || []);
+        cursor = result.hasMore ? result.cursor : undefined;
+      } while (cursor);
+    } catch (listErr: any) {
+      console.warn("[Blob API] List with prefix error, trying root:", listErr);
+      try {
+        const rootRes = await list({ limit: 1000, token });
+        allBlobs = rootRes.blobs || [];
+      } catch (rootErr: any) {
+        return res.status(400).json({
+          success: false,
+          isConfigured: true,
+          error: "Erreur de communication avec Vercel Blob: " + (rootErr.message || String(rootErr)),
+        });
+      }
+    }
+
+    const imageExtensions = /\.(jpg|jpeg|png|webp|avif|gif|svg)$/i;
+    const imageBlobs = allBlobs.filter((b) => imageExtensions.test(b.pathname || b.url));
+
+    const files = imageBlobs.map((b) => {
+      const pathname = b.pathname || '';
+      const filename = pathname.split('/').pop() || pathname;
+      const nameWithoutExt = filename.replace(/\.[a-zA-Z0-9]+$/i, '');
+      const refCandidate = nameWithoutExt.replace(/-[a-zA-Z0-9]{6,}$/, '');
+      return {
+        pathname,
+        url: b.url,
+        filename,
+        referenceCandidate: refCandidate,
+        size: b.size || 0,
+        uploadedAt: b.uploadedAt,
+      };
+    });
+
+    res.json({
+      success: true,
+      isConfigured: true,
+      folder: folder || 'racine',
+      count: files.length,
+      files,
+    });
+  } catch (err: any) {
+    console.error("[Blob API] list-extrait-images error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Erreur lors de la récupération des fichiers: " + (err.message || String(err)),
+    });
+  }
+});
+
+// 3. Sync & Associate Extrait Images with Products
+app.post("/api/blob/sync-extrait-images", async (req, res) => {
+  try {
+    const db = await storeDb.loadDatabaseAsync(true);
+    const token =
+      req.body?.token ||
+      db.storeSettings?.vercelBlobToken ||
+      process.env.BLOB_READ_WRITE_TOKEN;
+
+    const requestedFolder = (
+      req.body?.folderName ||
+      db.storeSettings?.vercelBlobFolderName ||
+      'extraits'
+    ).trim();
+
+    if (!token) {
+      return res.status(200).json({
+        success: false,
+        isConfigured: false,
+        matchedCount: 0,
+        unmatchedCount: 0,
+        totalExtraits: 0,
+        folderName: requestedFolder,
+        error: "Vercel Blob n'est pas encore configuré (BLOB_READ_WRITE_TOKEN manquant).",
+      });
+    }
+
+    let folder = requestedFolder.replace(/^\/+|\/+$/g, '');
+    const folderPrefix = folder ? `${folder}/` : '';
+
+    let allBlobs: any[] = [];
+    let cursor: string | undefined = undefined;
+
+    try {
+      do {
+        const result = await list({
+          prefix: folderPrefix || undefined,
+          limit: 1000,
+          cursor,
+          token,
+        });
+        allBlobs = allBlobs.concat(result.blobs || []);
+        cursor = result.hasMore ? result.cursor : undefined;
+      } while (cursor);
+    } catch (listErr: any) {
+      console.warn("[Blob Sync] List with prefix error, fallback to root:", listErr);
+      try {
+        const rootResult = await list({ limit: 1000, token });
+        allBlobs = rootResult.blobs || [];
+      } catch (rootErr: any) {
+        return res.status(400).json({
+          success: false,
+          isConfigured: true,
+          error: "Erreur de connexion à Vercel Blob: " + (rootErr.message || String(rootErr)),
+        });
+      }
+    }
+
+    const imageExtensions = /\.(jpg|jpeg|png|webp|avif|gif|svg)$/i;
+    const imageBlobs = allBlobs.filter((b) => imageExtensions.test(b.pathname || b.url));
+
+    // Index images by candidate reference variants
+    const blobMap = new Map<string, { url: string; pathname: string; filename: string }>();
+    const blobRefRecords: Array<{ filename: string; variants: string[]; url: string; pathname: string }> = [];
+
+    for (const b of imageBlobs) {
+      const pathname = b.pathname || '';
+      const filename = pathname.split('/').pop() || pathname;
+      const nameWithoutExt = filename.replace(/\.[a-zA-Z0-9]+$/i, '');
+      const withoutVercelHash = nameWithoutExt.replace(/-[a-zA-Z0-9]{6,}$/, '');
+
+      const variants = new Set<string>();
+      extractReferenceVariants(nameWithoutExt).forEach((v) => variants.add(v));
+      extractReferenceVariants(withoutVercelHash).forEach((v) => variants.add(v));
+
+      const record = {
+        filename,
+        variants: Array.from(variants),
+        url: b.url,
+        pathname,
+      };
+      blobRefRecords.push(record);
+
+      for (const v of variants) {
+        if (!blobMap.has(v)) {
+          blobMap.set(v, { url: b.url, pathname, filename });
+        }
+      }
+    }
+
+    const inputProducts: any[] = Array.isArray(req.body?.products)
+      ? req.body.products
+      : db.products;
+
+    let matchedCount = 0;
+    const matchedList: Array<{ code: string; name: string; imageUrl: string; filename: string }> = [];
+    const unmatchedCodes: string[] = [];
+    const matchedBlobFilenames = new Set<string>();
+
+    const updatedProducts = inputProducts.map((p) => {
+      if (p.family !== 'Extrait') {
+        return p;
+      }
+
+      const prodVariants = new Set<string>();
+      extractReferenceVariants(p.code).forEach((v) => prodVariants.add(v));
+      extractReferenceVariants(p.id).forEach((v) => prodVariants.add(v));
+
+      const nameCodeMatches = (p.name || '').match(/\b([A-Za-z]{1,4}[-_ ]?\d{1,5})\b/g);
+      if (nameCodeMatches) {
+        nameCodeMatches.forEach((m: string) => {
+          extractReferenceVariants(m).forEach((v) => prodVariants.add(v));
+        });
+      }
+
+      let matchedMatch: { url: string; pathname: string; filename: string } | null = null;
+      for (const v of prodVariants) {
+        if (blobMap.has(v)) {
+          matchedMatch = blobMap.get(v)!;
+          break;
+        }
+      }
+
+      if (matchedMatch) {
+        matchedCount++;
+        matchedBlobFilenames.add(matchedMatch.filename);
+        matchedList.push({
+          code: p.code,
+          name: p.name,
+          imageUrl: matchedMatch.url,
+          filename: matchedMatch.filename,
+        });
+        return {
+          ...p,
+          imageUrl: matchedMatch.url,
+          lastUpdated: new Date().toISOString(),
+        };
+      } else {
+        unmatchedCodes.push(p.code);
+        return p;
+      }
+    });
+
+    const unmatchedBlobs = blobRefRecords
+      .filter((r) => !matchedBlobFilenames.has(r.filename))
+      .map((r) => r.filename);
+
+    const totalExtraits = inputProducts.filter((p) => p.family === 'Extrait').length;
+    const unmatchedCount = totalExtraits - matchedCount;
+
+    const saveToDatabase = req.body?.saveToDatabase !== false;
+    if (saveToDatabase && matchedCount > 0) {
+      await storeDb.syncProducts(updatedProducts);
+      broadcastServerEvent("products:updated", { products: updatedProducts });
+    }
+
+    res.json({
+      success: true,
+      isConfigured: true,
+      folderName: folder,
+      totalExtraits,
+      matchedCount,
+      unmatchedCount,
+      totalImagesInFolder: imageBlobs.length,
+      matchedList,
+      unmatchedCodes: unmatchedCodes.slice(0, 50),
+      unmatchedBlobs: unmatchedBlobs.slice(0, 50),
+      products: updatedProducts,
+      message: `${matchedCount} images d'extraits associées avec succès depuis le dossier Vercel Blob "${folder}".`,
+    });
+  } catch (err: any) {
+    console.error("[Blob Sync] Error syncing extrait images:", err);
+    res.status(500).json({
+      success: false,
+      error: "Erreur lors de la synchronisation des images: " + (err.message || String(err)),
+    });
+  }
+});
+
+// 4. Compress & Move Extrait Images in Vercel Blob
+app.post("/api/blob/compress-and-move-extrait-images", async (req, res) => {
+  try {
+    const db = await storeDb.loadDatabaseAsync(true);
+    const token =
+      req.body?.token ||
+      db.storeSettings?.vercelBlobToken ||
+      process.env.BLOB_READ_WRITE_TOKEN;
+
+    if (!token) {
+      return res.status(200).json({
+        success: false,
+        error: "Vercel Blob n'est pas configuré (BLOB_READ_WRITE_TOKEN manquant).",
+      });
+    }
+
+    const sourceFolder = (req.body?.sourceFolder || 'extraits-raw').trim().replace(/^\/+|\/+$/g, '');
+    const targetFolder = (req.body?.targetFolder || db.storeSettings?.vercelBlobFolderName || 'extraits').trim().replace(/^\/+|\/+$/g, '');
+    const deleteSource = Boolean(req.body?.deleteSourceAfter);
+    const maxDimension = Math.min(2400, Math.max(400, Number(req.body?.maxDimension) || 1200));
+    const quality = Math.min(100, Math.max(50, Number(req.body?.quality) || 82));
+
+    const sourcePrefix = sourceFolder ? `${sourceFolder}/` : '';
+    let allBlobs: any[] = [];
+    let cursor: string | undefined = undefined;
+
+    do {
+      const result = await list({
+        prefix: sourcePrefix || undefined,
+        limit: 1000,
+        cursor,
+        token,
+      });
+      allBlobs = allBlobs.concat(result.blobs || []);
+      cursor = result.hasMore ? result.cursor : undefined;
+    } while (cursor);
+
+    const imageExtensions = /\.(jpg|jpeg|png|webp|avif|tiff|bmp)$/i;
+    const candidateBlobs = allBlobs.filter((b) => imageExtensions.test(b.pathname || b.url));
+
+    if (candidateBlobs.length === 0) {
+      return res.json({
+        success: true,
+        processedCount: 0,
+        totalOriginalBytes: 0,
+        totalCompressedBytes: 0,
+        savedBytes: 0,
+        overallSavedPercent: 0,
+        matchedProductsCount: 0,
+        sourceFolder,
+        targetFolder,
+        details: [],
+        message: `Aucune image trouvée dans le dossier source "${sourceFolder}".`,
+      });
+    }
+
+    let processedCount = 0;
+    let totalOriginalBytes = 0;
+    let totalCompressedBytes = 0;
+    const processedList: Array<{
+      filename: string;
+      originalUrl: string;
+      compressedUrl: string;
+      originalSize: number;
+      compressedSize: number;
+      savedPercent: number;
+    }> = [];
+
+    for (const b of candidateBlobs) {
+      try {
+        const pathname = b.pathname || '';
+        const rawFilename = pathname.split('/').pop() || pathname;
+        const nameWithoutExt = rawFilename.replace(/\.[a-zA-Z0-9]+$/i, '');
+        const cleanName = nameWithoutExt.replace(/-[a-zA-Z0-9]{6,}$/, '');
+        const targetFilename = `${cleanName}.webp`;
+        const targetPath = targetFolder ? `${targetFolder}/${targetFilename}` : targetFilename;
+
+        // Fetch original
+        const resp = await fetch(b.url);
+        if (!resp.ok) continue;
+        const arrayBuf = await resp.arrayBuffer();
+        const originalBuffer = Buffer.from(arrayBuf);
+        const originalSize = originalBuffer.length;
+        totalOriginalBytes += originalSize;
+
+        // Compress to responsive WebP with sharp
+        const compressedBuffer = await sharp(originalBuffer)
+          .rotate()
+          .resize({ width: maxDimension, height: maxDimension, fit: 'inside', withoutEnlargement: true })
+          .webp({ quality, effort: 4 })
+          .toBuffer();
+
+        const compressedSize = compressedBuffer.length;
+        totalCompressedBytes += compressedSize;
+
+        // Upload compressed image
+        const uploadedBlob = await put(targetPath, compressedBuffer, {
+          access: 'public',
+          contentType: 'image/webp',
+          token,
+          addRandomSuffix: false,
+        });
+
+        // Optionally delete original uncompressed image from source folder
+        if (deleteSource && b.url !== uploadedBlob.url) {
+          try {
+            await del(b.url, { token });
+          } catch (delErr) {
+            console.warn('[Blob Compress] Del original warning:', delErr);
+          }
+        }
+
+        const savedPercent = originalSize > 0 ? Math.round(((originalSize - compressedSize) / originalSize) * 100) : 0;
+        processedCount++;
+        processedList.push({
+          filename: targetFilename,
+          originalUrl: b.url,
+          compressedUrl: uploadedBlob.url,
+          originalSize,
+          compressedSize,
+          savedPercent,
+        });
+      } catch (itemErr: any) {
+        console.error(`[Blob Compress] Error on ${b.url}:`, itemErr?.message || itemErr);
+      }
+    }
+
+    // Automatically re-sync and associate with products
+    let matchedProductsCount = 0;
+    if (processedList.length > 0) {
+      const blobMap = new Map<string, string>();
+      for (const item of processedList) {
+        const baseName = item.filename.replace(/\.[a-zA-Z0-9]+$/i, '');
+        extractReferenceVariants(baseName).forEach((v) => blobMap.set(v, item.compressedUrl));
+      }
+
+      let updatedAny = false;
+      const updatedProducts = db.products.map((p) => {
+        if (p.family !== 'Extrait') return p;
+        const variants = [
+          ...extractReferenceVariants(p.code),
+          ...extractReferenceVariants(p.id),
+        ];
+        for (const v of variants) {
+          if (blobMap.has(v)) {
+            matchedProductsCount++;
+            updatedAny = true;
+            return {
+              ...p,
+              imageUrl: blobMap.get(v)!,
+              lastUpdated: new Date().toISOString(),
+            };
+          }
+        }
+        return p;
+      });
+
+      if (updatedAny) {
+        await storeDb.syncProducts(updatedProducts);
+        broadcastServerEvent("products:updated", { products: updatedProducts });
+      }
+    }
+
+    const savedBytes = Math.max(0, totalOriginalBytes - totalCompressedBytes);
+    const overallSavedPercent = totalOriginalBytes > 0
+      ? Math.round((savedBytes / totalOriginalBytes) * 100)
+      : 0;
+
+    res.json({
+      success: true,
+      processedCount,
+      totalOriginalBytes,
+      totalCompressedBytes,
+      savedBytes,
+      overallSavedPercent,
+      matchedProductsCount,
+      targetFolder,
+      sourceFolder,
+      details: processedList,
+      message: `${processedCount} photos compressées avec succès (-${overallSavedPercent}% de poids) et transférées vers "${targetFolder}". ${matchedProductsCount} extraits mis à jour.`,
+    });
+  } catch (err: any) {
+    console.error("[Blob Compress] Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Erreur lors de la compression des images: " + (err.message || String(err)),
+    });
+  }
+});
+
+// 5. Direct Upload & Auto-Compress to Vercel Blob
+app.post("/api/blob/upload-and-compress-extrait-image", async (req, res) => {
+  try {
+    const db = await storeDb.loadDatabaseAsync(true);
+    const token =
+      req.body?.token ||
+      db.storeSettings?.vercelBlobToken ||
+      process.env.BLOB_READ_WRITE_TOKEN;
+
+    if (!token) {
+      return res.status(200).json({
+        success: false,
+        error: "Vercel Blob n'est pas configuré (BLOB_READ_WRITE_TOKEN manquant).",
+      });
+    }
+
+    const { fileName, base64Data, folderName } = req.body || {};
+    if (!base64Data || !fileName) {
+      return res.status(400).json({ success: false, error: "fileName et base64Data sont obligatoires." });
+    }
+
+    const cleanBase64 = base64Data.replace(/^data:image\/[a-zA-Z0-9\-+.]+;base64,/, '');
+    const rawBuffer = Buffer.from(cleanBase64, 'base64');
+    const originalSize = rawBuffer.length;
+
+    // Compress to WebP
+    const compressedBuffer = await sharp(rawBuffer)
+      .rotate()
+      .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 82, effort: 4 })
+      .toBuffer();
+
+    const compressedSize = compressedBuffer.length;
+
+    const baseName = fileName.replace(/\.[a-zA-Z0-9]+$/i, '');
+    const cleanName = baseName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const targetFolder = (folderName || db.storeSettings?.vercelBlobFolderName || 'extraits').trim().replace(/^\/+|\/+$/g, '');
+    const targetPath = targetFolder ? `${targetFolder}/${cleanName}.webp` : `${cleanName}.webp`;
+
+    const blob = await put(targetPath, compressedBuffer, {
+      access: 'public',
+      contentType: 'image/webp',
+      token,
+      addRandomSuffix: false,
+    });
+
+    const savedPercent = originalSize > 0 ? Math.round(((originalSize - compressedSize) / originalSize) * 100) : 0;
+
+    // Associate with matching extrait product if exists
+    let matchedProductCode: string | null = null;
+    const variants = extractReferenceVariants(cleanName);
+    const updatedProducts = db.products.map((p) => {
+      if (p.family !== 'Extrait') return p;
+      const pVariants = [
+        ...extractReferenceVariants(p.code),
+        ...extractReferenceVariants(p.id),
+      ];
+      for (const v of variants) {
+        if (pVariants.includes(v)) {
+          matchedProductCode = p.code;
+          return {
+            ...p,
+            imageUrl: blob.url,
+            lastUpdated: new Date().toISOString(),
+          };
+        }
+      }
+      return p;
+    });
+
+    if (matchedProductCode) {
+      await storeDb.syncProducts(updatedProducts);
+      broadcastServerEvent("products:updated", { products: updatedProducts });
+    }
+
+    res.json({
+      success: true,
+      url: blob.url,
+      filename: `${cleanName}.webp`,
+      originalSize,
+      compressedSize,
+      savedPercent,
+      matchedProductCode,
+      message: `Image ${cleanName}.webp compressée (-${savedPercent}%) et téléversée dans Vercel Blob.${matchedProductCode ? ` Associée à l'extrait ${matchedProductCode}.` : ''}`,
+    });
+  } catch (err: any) {
+    console.error("[Blob Direct Upload] Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Erreur de téléversement et compression: " + (err.message || String(err)),
+    });
+  }
+});
 
 // Fallback for root API endpoint
 app.get("/api", (_req, res) => {

@@ -1,17 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { PreOrder, StoreSettings } from '../types';
-
-// Format currency in Algerian Dinars (DA) with up to 2 decimals
-export const formatDZD = (amount: number): string => {
-  const formatted = new Intl.NumberFormat('fr-DZ', {
-    style: 'decimal',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(amount);
-  
-  // Replace any runtime thousands-separator slashes with clean periods
-  return formatted.replace(/\//g, '.') + ' DA';
-};
+import { formatDZD } from './formatDZD';
+export { formatDZD };
 
 let cachedFontBase64: string | null = null;
 

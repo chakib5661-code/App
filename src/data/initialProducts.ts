@@ -18,6 +18,8 @@ export const INITIAL_STORE_SETTINGS: StoreSettings = {
   telegramProformaChatId: '',
   telegramAccessChatId: '',
   telegramNotificationsEnabled: true,
+  underConstruction: true,
+  vercelBlobFolderName: 'extraits',
 };
 
 export const INITIAL_PRODUCTS: Product[] = [

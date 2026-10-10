@@ -1,6 +1,3 @@
-// Suppress legacy third-party dependency warnings (such as url.parse DEP0169)
-process.noDeprecation = true;
-
 import express from "express";
 import http from "http";
 import path from "path";

@@ -14,9 +14,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Tulip" />
     <link rel="icon" type="image/svg+xml" href="/tulip-logo.svg" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/manifest.json" />
     <link rel="preload" href="/tulip-logo.svg" as="image" type="image/svg+xml" />
+    <link rel="preload" href="/tulip-extrait-default.jpg" as="image" type="image/jpeg" />
     <script>
       // Suppress benign [vite] websocket / dev notices when running inside preview iframe
       (function() {
@@ -70,15 +69,6 @@
           }
         }, true);
 
-        // Early recovery if a new deployment removed old chunks while user is browsing
-        window.addEventListener('vite:preloadError', function(e) {
-          var now = Date.now();
-          var last = Number(sessionStorage.getItem('tulip_last_pwa_reload') || 0);
-          if (now - last > 12000) {
-            sessionStorage.setItem('tulip_last_pwa_reload', String(now));
-            window.location.reload();
-          }
-        });
       })();
     </script>
   </head>

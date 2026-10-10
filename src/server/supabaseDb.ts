@@ -223,19 +223,33 @@ export async function saveDatabaseToSupabase(db: ServerDatabase): Promise<boolea
  */
 async function syncNormalizedTablesAsync(client: SupabaseClient, db: ServerDatabase): Promise<void> {
   try {
+    const promises: PromiseLike<any>[] = [];
+
+    // 1. Sync store settings table
     if (db.storeSettings) {
-      await Promise.resolve(
+      const s = db.storeSettings;
+      promises.push(
         client.from('tulip_store_settings').upsert({
           id: 'default',
-          ...db.storeSettings,
+          store_name: s.storeName || 'Tulip Fragrance Company',
+          store_subtitle: s.tagline || '',
+          phone: s.phone || '',
+          secondary_phone: s.phoneSecondary || null,
+          email: s.email || null,
+          address: s.address || null,
+          wilaya: s.wilaya || null,
+          minimum_order_amount_da: Number(s.minOrderAmountDA) || 0,
+          telegram_notifications_enabled: s.telegramNotificationsEnabled !== false,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'id' })
-      ).catch(() => {});
+        }, { onConflict: 'id' }).then(({ error }) => {
+          if (error) console.warn('[Supabase] Error syncing store settings table:', error.message);
+        })
+      );
     }
 
-    // Sync products in batches of 50
+    // 2. Bulk Sync Products in a single optimized PostgreSQL bulk-upsert query
     if (Array.isArray(db.products) && db.products.length > 0) {
-      const batch = db.products.map((p) => ({
+      const productsBatch = db.products.map((p) => ({
         id: p.id,
         code: p.code,
         name: p.name,
@@ -257,14 +271,15 @@ async function syncNormalizedTablesAsync(client: SupabaseClient, db: ServerDatab
         updated_at: new Date().toISOString(),
       }));
 
-      for (let i = 0; i < batch.length; i += 50) {
-        await Promise.resolve(
-          client.from('tulip_products').upsert(batch.slice(i, i + 50), { onConflict: 'id' })
-        ).catch(() => {});
-      }
+      // Supabase natively supports massive multi-row upserts in a single query
+      promises.push(
+        client.from('tulip_products').upsert(productsBatch, { onConflict: 'id' }).then(({ error }) => {
+          if (error) console.warn('[Supabase] Error batch upserting products:', error.message);
+        })
+      );
     }
 
-    // Sync orders in batches of 25
+    // 3. Bulk Sync Orders in a single optimized PostgreSQL bulk-upsert query
     if (Array.isArray(db.orders) && db.orders.length > 0) {
       const ordersBatch = db.orders.map((o) => ({
         id: o.id,
@@ -279,13 +294,17 @@ async function syncNormalizedTablesAsync(client: SupabaseClient, db: ServerDatab
         updated_at: new Date().toISOString(),
       }));
 
-      for (let i = 0; i < ordersBatch.length; i += 25) {
-        await Promise.resolve(
-          client.from('tulip_orders').upsert(ordersBatch.slice(i, i + 25), { onConflict: 'id' })
-        ).catch(() => {});
-      }
+      promises.push(
+        client.from('tulip_orders').upsert(ordersBatch, { onConflict: 'id' }).then(({ error }) => {
+          if (error) console.warn('[Supabase] Error batch upserting orders:', error.message);
+        })
+      );
     }
-  } catch {
-    // Non-blocking catch
+
+    // Execute all table synchronizations in parallel with a single server roundtrip
+    await Promise.all(promises);
+    console.log('[Supabase] Successfully synchronized normalized tables in parallel.');
+  } catch (err: any) {
+    console.warn('[Supabase] Error in syncNormalizedTablesAsync:', err?.message || err);
   }
 }

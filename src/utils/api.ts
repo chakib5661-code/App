@@ -10,7 +10,7 @@ import {
 } from '../types';
 import { idbSaveSyncSnapshot, idbGetSyncSnapshot, idbSaveProducts } from './indexedDb';
 import { prefetchProductImages } from './imageCache';
-import { directClientFetchFromSupabase } from './supabaseClient';
+import { directClientFetchFromSupabase, getClientSupabaseCredentials } from './supabaseClient';
 
 export interface SyncDataResponse {
   status: string;
@@ -36,12 +36,24 @@ export const OFFLINE_SYNC_CACHE_KEY = 'tulip_offline_sync_snapshot';
 export function getCachedSyncData(): SyncDataResponse | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(OFFLINE_SYNC_CACHE_KEY);
+    const raw = localStorage.getItem('tulip_saved_store_settings');
     if (raw) {
-      return JSON.parse(raw);
+      const parsedSettings = JSON.parse(raw);
+      // Return a skeleton snapshot containing ONLY the website parameters (storeSettings)
+      return {
+        status: 'ok',
+        products: [],
+        orders: [],
+        customerApplications: [],
+        customerUsers: [],
+        adBanners: [],
+        storeSettings: parsedSettings,
+        lastUpdated: new Date().toISOString(),
+        serverTime: new Date().toISOString(),
+      };
     }
   } catch (e) {
-    console.warn('[Cache] Could not read offline sync cache:', e);
+    console.warn('[Cache] Could not read offline parameters:', e);
   }
   return null;
 }
@@ -49,48 +61,21 @@ export function getCachedSyncData(): SyncDataResponse | null {
 export function saveCachedSyncData(data: SyncDataResponse): void {
   if (typeof window === 'undefined' || !data) return;
   try {
-    // Avoid saving oversized base64 strings into the snapshot
-    const sanitizedProducts = (data.products || []).map((p) => {
-      if (p.imageUrl && p.imageUrl.startsWith('data:image/') && p.imageUrl.length > 200 * 1024) {
-        return { ...p, imageUrl: '/tulip-extrait-default.jpg' };
-      }
-      return p;
-    });
-
-    // SECURITY & STORAGE PRIORITY EXCLUSIONS:
-    // Strip private admin data (historical orders, customer accounts, and registration forms)
-    // from persistent caches (localStorage & IndexedDB). This prioritizes catalog and settings storage,
-    // prevents browser storage limit/quota warnings, and secures admin data on shared/personal devices.
-    const snapshot: SyncDataResponse = {
-      ...data,
-      products: sanitizedProducts,
-      orders: [],
-      customerApplications: [],
-      customerUsers: [],
-    };
-
-    localStorage.setItem(OFFLINE_SYNC_CACHE_KEY, JSON.stringify(snapshot));
-
-    // Persist optimized dataset into IndexedDB (high storage capacity)
-    idbSaveSyncSnapshot(snapshot as any).catch(() => {});
+    if (data.storeSettings) {
+      // ONLY persist the website parameters (storeSettings) to localStorage
+      localStorage.setItem('tulip_saved_store_settings', JSON.stringify(data.storeSettings));
+    }
   } catch (e) {
-    console.warn('[Cache] Could not write offline sync cache:', e);
+    console.warn('[Cache] Could not save website parameters:', e);
   }
-
-  if (Array.isArray(data.products)) {
-    idbSaveProducts(data.products).catch(() => {});
-    // Automatically prefetch & cache all product images in background for 100% offline browsing
-    prefetchProductImages(data.products).catch(() => {});
-  }
+  // Catalog & product caching, image prefetching, and IndexedDB snapshots are completely disabled
 }
 
 export async function fetchSyncData(timeoutMs = 1800, bypassCache = false): Promise<SyncDataResponse | null> {
-  // If user is explicitly offline and not bypassing cache, return cached snapshot instantly
+  // If user is explicitly offline and not bypassing cache, return cached parameters instantly
   if (!bypassCache && typeof navigator !== 'undefined' && !navigator.onLine) {
     const cached = getCachedSyncData();
     if (cached) return cached;
-    const idbCached = await idbGetSyncSnapshot();
-    if (idbCached) return idbCached as any;
   }
 
   const controller = new AbortController();
@@ -139,20 +124,6 @@ export async function fetchSyncData(timeoutMs = 1800, bypassCache = false): Prom
     console.warn('[API] directClientFetchFromSupabase notice:', supabaseErr);
   }
 
-  // If we are in Admin section and want to bypass cache, do NOT fall back to local/indexeddb cache!
-  if (bypassCache) {
-    return null;
-  }
-
-  // Fallback to local device cache or IndexedDB
-  const cached = getCachedSyncData();
-  if (cached) {
-    return cached;
-  }
-  const idbCached = await idbGetSyncSnapshot();
-  if (idbCached) {
-    return idbCached as any;
-  }
   return null;
 }
 
@@ -895,64 +866,8 @@ export interface ServerEventData {
 export function subscribeToServerEvents(
   onEvent: (event: ServerEventData) => void
 ): () => void {
-  if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
-    return () => {};
-  }
-
-  let eventSource: EventSource | null = null;
-  let isClosed = false;
-  let retryTimer: any = null;
-  let retryCount = 0;
-
-  function connect() {
-    if (isClosed) return;
-
-    try {
-      eventSource = new EventSource('/api/events');
-
-      eventSource.onopen = () => {
-        retryCount = 0;
-      };
-
-      eventSource.onmessage = (messageEvent) => {
-        try {
-          if (!messageEvent.data || messageEvent.data.startsWith(':')) return;
-          const parsed = JSON.parse(messageEvent.data);
-          if (parsed && parsed.type) {
-            onEvent(parsed);
-          }
-        } catch (e) {
-          console.debug('[SSE] Message parsing skipped:', e);
-        }
-      };
-
-      eventSource.onerror = () => {
-        if (eventSource) {
-          eventSource.close();
-          eventSource = null;
-        }
-        if (!isClosed) {
-          // Reconnect with backoff (capped at 10s)
-          const delay = Math.min(1000 * Math.pow(1.5, retryCount), 10000);
-          retryCount++;
-          retryTimer = setTimeout(connect, delay);
-        }
-      };
-    } catch (e) {
-      console.warn('[SSE] EventSource initialisation failed:', e);
-    }
-  }
-
-  connect();
-
-  return () => {
-    isClosed = true;
-    if (retryTimer) clearTimeout(retryTimer);
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-  };
+  console.log('[SSE] Real-time synchronization is disabled per configuration.');
+  return () => {};
 }
 
 export async function syncAdminUsersOnServer(users: AdminUser[]): Promise<boolean> {
@@ -967,6 +882,243 @@ export async function syncAdminUsersOnServer(users: AdminUser[]): Promise<boolea
   } catch (err) {
     console.error('[API] syncAdminUsersOnServer error:', err);
     return false;
+  }
+}
+
+// Vercel Blob - Media & Backup upload/import/export client endpoints
+export async function uploadMediaToServer(
+  base64: string,
+  filename?: string
+): Promise<{ success: boolean; url?: string; message?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/media/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64, filename }),
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error('[API] uploadMediaToServer error:', err);
+    return { success: false, error: err.message || 'Erreur réseau lors de l\'envoi de l\'image.' };
+  }
+}
+
+export async function exportDatabaseToBlobOnServer(): Promise<{
+  success: boolean;
+  url?: string;
+  filename?: string;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/backup/export-blob', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error('[API] exportDatabaseToBlobOnServer error:', err);
+    return { success: false, error: err.message || 'Erreur réseau lors de l\'exportation de la sauvegarde.' };
+  }
+}
+
+export async function importDatabaseFromBlobOnServer(
+  url: string
+): Promise<{ success: boolean; message?: string; data?: any; error?: string }> {
+  try {
+    const res = await fetch('/api/backup/import-blob', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error('[API] importDatabaseFromBlobOnServer error:', err);
+    return { success: false, error: err.message || 'Erreur réseau lors de l\'importation de la sauvegarde.' };
+  }
+}
+
+export interface BlobExtraitSyncResult {
+  success: boolean;
+  isConfigured: boolean;
+  folderName: string;
+  totalExtraits: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  totalImagesInFolder?: number;
+  matchedList?: Array<{ code: string; name: string; imageUrl: string; filename: string }>;
+  unmatchedCodes?: string[];
+  unmatchedBlobs?: string[];
+  products?: Product[];
+  error?: string;
+  message?: string;
+}
+
+export async function fetchBlobStatus(): Promise<{
+  configured: boolean;
+  hasEnvToken: boolean;
+  folderName: string;
+}> {
+  try {
+    const res = await fetch('/api/blob/status');
+    return await res.json();
+  } catch {
+    return { configured: false, hasEnvToken: false, folderName: 'extraits' };
+  }
+}
+
+export async function listExtraitImagesFromBlob(options?: {
+  folder?: string;
+  token?: string;
+}): Promise<{
+  success: boolean;
+  isConfigured: boolean;
+  folder: string;
+  count: number;
+  files: Array<{
+    pathname: string;
+    url: string;
+    filename: string;
+    referenceCandidate: string;
+    size: number;
+    uploadedAt: string;
+  }>;
+  error?: string;
+}> {
+  try {
+    const params = new URLSearchParams();
+    if (options?.folder) params.set('folder', options.folder);
+    if (options?.token) params.set('token', options.token);
+    const res = await fetch(`/api/blob/list-extrait-images?${params.toString()}`);
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      isConfigured: false,
+      folder: options?.folder || 'extraits',
+      count: 0,
+      files: [],
+      error: err.message || 'Erreur réseau',
+    };
+  }
+}
+
+export async function syncExtraitImagesFromBlob(options?: {
+  folderName?: string;
+  products?: Product[];
+  token?: string;
+  saveToDatabase?: boolean;
+}): Promise<BlobExtraitSyncResult> {
+  try {
+    const res = await fetch('/api/blob/sync-extrait-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        folderName: options?.folderName,
+        products: options?.products,
+        token: options?.token,
+        saveToDatabase: options?.saveToDatabase !== false,
+      }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('[API] syncExtraitImagesFromBlob error:', err);
+    return {
+      success: false,
+      isConfigured: false,
+      folderName: options?.folderName || 'extraits',
+      totalExtraits: 0,
+      matchedCount: 0,
+      unmatchedCount: 0,
+      error: err.message || 'Erreur de connexion au serveur.',
+    };
+  }
+}
+
+export interface BlobCompressResult {
+  success: boolean;
+  processedCount: number;
+  totalOriginalBytes: number;
+  totalCompressedBytes: number;
+  savedBytes: number;
+  overallSavedPercent: number;
+  matchedProductsCount: number;
+  targetFolder: string;
+  sourceFolder: string;
+  details?: Array<{
+    filename: string;
+    originalUrl: string;
+    compressedUrl: string;
+    originalSize: number;
+    compressedSize: number;
+    savedPercent: number;
+  }>;
+  message?: string;
+  error?: string;
+}
+
+export async function compressAndMoveExtraitImagesFromBlob(options?: {
+  sourceFolder?: string;
+  targetFolder?: string;
+  deleteSourceAfter?: boolean;
+  maxDimension?: number;
+  quality?: number;
+  token?: string;
+}): Promise<BlobCompressResult> {
+  try {
+    const res = await fetch('/api/blob/compress-and-move-extrait-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options || {}),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      processedCount: 0,
+      totalOriginalBytes: 0,
+      totalCompressedBytes: 0,
+      savedBytes: 0,
+      overallSavedPercent: 0,
+      matchedProductsCount: 0,
+      targetFolder: options?.targetFolder || 'extraits',
+      sourceFolder: options?.sourceFolder || 'extraits-raw',
+      error: err.message || 'Erreur réseau lors de la compression.',
+    };
+  }
+}
+
+export async function uploadAndCompressExtraitImage(options: {
+  fileName: string;
+  base64Data: string;
+  folderName?: string;
+  token?: string;
+}): Promise<{
+  success: boolean;
+  url?: string;
+  filename?: string;
+  originalSize?: number;
+  compressedSize?: number;
+  savedPercent?: number;
+  matchedProductCode?: string | null;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/blob/upload-and-compress-extrait-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Erreur réseau lors du téléversement et compression.',
+    };
   }
 }
 

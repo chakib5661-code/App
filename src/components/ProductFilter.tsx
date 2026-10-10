@@ -28,7 +28,7 @@ interface ProductFilterProps {
   topSellersCount?: number;
 }
 
-export const ProductFilter: React.FC<ProductFilterProps> = ({
+const ProductFilterComponent: React.FC<ProductFilterProps> = ({
   searchQuery,
   onSearchChange,
   selectedFamily,
@@ -274,3 +274,5 @@ export const ProductFilter: React.FC<ProductFilterProps> = ({
     </div>
   );
 };
+
+export const ProductFilter = React.memo(ProductFilterComponent);
