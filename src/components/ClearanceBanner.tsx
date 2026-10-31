@@ -36,14 +36,19 @@ export const ClearanceBanner: React.FC<ClearanceBannerProps> = ({ count, maxDisc
         <span className="hidden sm:flex w-10 h-10 rounded-xl bg-white/15 items-center justify-center shrink-0">
           <Tag className="w-5 h-5" />
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
           <div className="text-[11px] font-bold uppercase tracking-wider text-rose-100">
             {L('Soldes et déstockage', 'Sale and clearance', 'التخفيضات والتصفية')}
           </div>
           <div className="text-lg sm:text-xl font-black leading-tight">
-            {maxDiscount > 0
-              ? L(`Jusqu’à -${maxDiscount}%`, `Up to -${maxDiscount}%`, `خصم يصل إلى ${maxDiscount}%`)
-              : L('Prix réduits', 'Reduced prices', 'أسعار مخفضة')}
+            {maxDiscount > 0 ? (
+              <>
+                {L('Jusqu’à ', 'Up to ', 'خصم يصل إلى ')}
+                <bdi dir="ltr">-{maxDiscount}%</bdi>
+              </>
+            ) : (
+              L('Prix réduits', 'Reduced prices', 'أسعار مخفضة')
+            )}
           </div>
           <div className="text-xs text-rose-100/90 truncate">
             {count} {L('produits', 'products', 'منتج')}
