@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { TrustStrip } from './TrustStrip';
 import {
   X,
   Trash2,
@@ -687,6 +688,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </p>
                 </div>
               )}
+
+              <TrustStrip lang={lang} />
 
               {/* USER DIRECTIVE: SAVE FOR LATER BUTTON PLACED ABOVE SUBMIT BUTTON */}
               <div>
