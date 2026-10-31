@@ -1,4 +1,7 @@
 {
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
   "crons": [
     { "path": "/api/reminders/run", "schedule": "0 8 * * *" }
   ]
