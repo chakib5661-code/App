@@ -41,6 +41,7 @@ import { CartDrawer } from './components/CartDrawer';
 import { QuickOrderView } from './components/QuickOrderView';
 import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
+import { ClearanceBanner } from './components/ClearanceBanner';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppLanguage } from './translations';
 import { formatDZD } from './utils/formatDZD';
@@ -1652,6 +1653,20 @@ export default function App() {
     [products]
   );
 
+  // Best discount and earliest end date among sale/clearance products (for the banner)
+  const clearanceInfo = useMemo(() => {
+    let maxDiscount = 0;
+    let endsAt: string | null = null;
+    const now = Date.now();
+    products.forEach((p) => {
+      if (p.isHidden || !(p.clearance || (p.discountPercent || 0) > 0)) return;
+      maxDiscount = Math.max(maxDiscount, p.discountPercent || 0);
+      const u = p.clearance?.until;
+      if (u && new Date(u).getTime() > now && (!endsAt || new Date(u) < new Date(endsAt))) endsAt = u;
+    });
+    return { maxDiscount, endsAt };
+  }, [products]);
+
   // Filtered & Sorted Products
   const filteredProducts = useMemo(() => {
     return products
@@ -3114,6 +3129,15 @@ export default function App() {
 
       {/* Main Catalog View */}
       <main className="max-w-7xl mx-auto px-4 py-6 sm:py-8 flex-1 w-full">
+        <ClearanceBanner
+          count={clearanceCount}
+          maxDiscount={clearanceInfo.maxDiscount}
+          endsAt={clearanceInfo.endsAt}
+          active={showOnlyClearance}
+          onToggle={() => setShowOnlyClearance((v) => !v)}
+          lang={currentLang}
+        />
+
         {/* Filters and Search Bar */}
         <ProductFilter
           searchQuery={searchQuery}
@@ -3498,7 +3522,7 @@ export default function App() {
         currentInterface={pendingInterface || currentInterface}
         isSwitching={Boolean(pendingInterface)}
         onSelectInterface={handleSelectInterface}
-        cartCount={cartCount}
+        cartCount={cart.length}
         cartTotalDA={cartTotalDA}
         isPricesVisible={isPricesVisible}
         onOpenCart={() => setIsCartOpen(true)}

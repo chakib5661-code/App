@@ -65,7 +65,14 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           onClick={onOpenCart}
           className="flex-[1.6] my-1.5 rounded-2xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white flex items-center justify-center gap-2 min-h-[48px] px-3 shadow-md active:scale-95 transition cursor-pointer"
         >
-          <ShoppingBag className="w-5 h-5" />
+          <span className="relative">
+            <ShoppingBag className="w-5 h-5" />
+            {cartCount > 0 && (
+              <span className="absolute -top-2 -right-2.5 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-[#9f0e4e] text-[10px] font-black flex items-center justify-center">
+                {cartCount}
+              </span>
+            )}
+          </span>
           <span className="text-sm font-black truncate">
             {cartCount > 0 && isPricesVisible ? formatDZD(cartTotalDA) : tr('السلة', 'Panier')}
           </span>
