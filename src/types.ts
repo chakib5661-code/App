@@ -20,6 +20,7 @@ export interface Product {
   lastUpdated?: string;
   arabicName?: string;
   gender?: string;
+  brand?: string; // Brand name, used by the brand filter
   capacityMl?: string | number;
   lowStockThreshold?: number;
   tierPrices?: VolumeTier[]; // Volume price breaks (qty in grams for Extrait, units otherwise)
