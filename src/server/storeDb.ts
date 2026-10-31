@@ -10,7 +10,13 @@ import {
   StoreSettings,
   CustomerAccountStatus,
   AdminUser,
+  OffersConfig,
+  SavedCart,
+  PushSubscriptionRecord,
+  PushLogEntry,
+  PushCategory,
 } from '../types';
+import { computeCart, normalizeOffers, pickLoyaltyTier, nextLoyaltyTier } from '../utils/offers';
 import { INITIAL_PRODUCTS, INITIAL_STORE_SETTINGS } from '../data/initialProducts';
 import { INITIAL_CUSTOMER_APPLICATIONS, INITIAL_AD_BANNERS } from '../data/initialCustomerData';
 import {
@@ -27,6 +33,12 @@ export interface ServerDatabase {
   adBanners: AdBanner[];
   storeSettings: StoreSettings;
   adminUsers?: AdminUser[];
+  offers?: OffersConfig;
+  carts?: SavedCart[];
+  pushSubscriptions?: PushSubscriptionRecord[];
+  /** per-customer opt-out of marketing push (order status always allowed) */
+  pushPrefs?: Record<string, { marketing: boolean }>;
+  pushLog?: PushLogEntry[];
   lastUpdated: string;
 }
 
@@ -188,6 +200,11 @@ export function loadDatabase(): ServerDatabase {
           adBanners: Array.isArray(parsed.adBanners) ? parsed.adBanners : [],
           storeSettings: parsed.storeSettings || INITIAL_STORE_SETTINGS,
           adminUsers: Array.isArray(parsed.adminUsers) && parsed.adminUsers.length > 0 ? parsed.adminUsers : defaultAdmins,
+          offers: parsed.offers,
+          carts: Array.isArray(parsed.carts) ? parsed.carts : [],
+          pushSubscriptions: Array.isArray(parsed.pushSubscriptions) ? parsed.pushSubscriptions : [],
+          pushPrefs: parsed.pushPrefs && typeof parsed.pushPrefs === 'object' ? parsed.pushPrefs : {},
+          pushLog: Array.isArray(parsed.pushLog) ? parsed.pushLog : [],
           lastUpdated: parsed.lastUpdated || new Date().toISOString(),
         };
         return cachedDb;
@@ -460,8 +477,14 @@ export async function createOrder(orderPayload: PreOrder): Promise<{ order: PreO
 
   const orderId = orderPayload.id || `order-${timestamp}-${Math.random().toString(36).slice(2, 6)}`;
 
+  const offers = getOffersFromDb(db);
+
+  // Authoritative pricing: never trust unit prices or totals sent by the browser.
+  const priced = priceOrderOnServer(db, orderPayload, offers);
+
   const newOrder: PreOrder = {
     ...orderPayload,
+    ...priced,
     id: orderId,
     orderNumber,
     date: orderPayload.date || new Date().toISOString(),
@@ -469,6 +492,14 @@ export async function createOrder(orderPayload: PreOrder): Promise<{ order: PreO
     isProforma,
     isOfflinePending: false,
   };
+
+  if (!isProforma && !orderPayload.isOfflinePending && newOrder.totalDA < offers.minOrderAmountDA) {
+    const err: any = new Error(
+      `Montant minimum de commande : ${offers.minOrderAmountDA} DA (votre panier : ${Math.round(newOrder.totalDA)} DA).`
+    );
+    err.code = 'MIN_ORDER';
+    throw err;
+  }
 
   // Check if order already exists (e.g. offline queue retry)
   const existingIndex = db.orders.findIndex(
@@ -1218,6 +1249,9 @@ export async function restoreDatabase(backup: Partial<ServerDatabase>): Promise<
   if (backup.storeSettings && typeof backup.storeSettings === 'object') {
     db.storeSettings = { ...db.storeSettings, ...backup.storeSettings };
   }
+  if (backup.offers && typeof backup.offers === 'object') {
+    db.offers = normalizeOffers(backup.offers, db.storeSettings?.minOrderAmountDA);
+  }
 
   db.lastUpdated = now;
   await persistDatabaseAsync(db);
@@ -1238,7 +1272,21 @@ export function getProducts(): Product[] {
 
 export async function syncProducts(newProducts: Product[]): Promise<Product[]> {
   const db = await loadDatabaseAsync(true);
-  db.products = newProducts;
+  // Keep admin-managed offer fields when the catalogue is replaced (e.g. Excel stock sync)
+  const previous = new Map<string, Product>();
+  db.products.forEach((p) => {
+    previous.set(p.id, p);
+    if (p.code) previous.set(`code:${String(p.code).toUpperCase()}`, p);
+  });
+  db.products = newProducts.map((np) => {
+    const old = previous.get(np.id) || previous.get(`code:${String(np.code || '').toUpperCase()}`);
+    if (!old) return np;
+    return {
+      ...np,
+      tierPrices: np.tierPrices ?? old.tierPrices,
+      relatedProductIds: np.relatedProductIds ?? old.relatedProductIds,
+    };
+  });
   await persistDatabaseAsync(db);
   return db.products;
 }
@@ -1372,4 +1420,358 @@ export async function saveAdminUsers(users: AdminUser[]): Promise<AdminUser[]> {
   db.adminUsers = users;
   await persistDatabaseAsync(db);
   return db.adminUsers;
+}
+
+
+// ---------------- OFFERS, PRICING & CUSTOMER INSIGHTS ----------------
+
+export function getOffersFromDb(db: ServerDatabase): OffersConfig {
+  return normalizeOffers(db.offers, db.storeSettings?.minOrderAmountDA);
+}
+
+export async function getOffersAsync(): Promise<OffersConfig> {
+  const db = await loadDatabaseAsync();
+  return getOffersFromDb(db);
+}
+
+export async function updateOffers(raw: Partial<OffersConfig>): Promise<OffersConfig> {
+  const db = await loadDatabaseAsync(true);
+  const next = normalizeOffers(raw, db.storeSettings?.minOrderAmountDA);
+  next.updatedAt = new Date().toISOString();
+  db.offers = next;
+  // Keep the legacy setting in step so older screens show the same minimum
+  if (db.storeSettings) db.storeSettings = { ...db.storeSettings, minOrderAmountDA: next.minOrderAmountDA };
+  await persistDatabaseAsync(db);
+  return next;
+}
+
+function countedOrders(db: ServerDatabase): PreOrder[] {
+  return db.orders.filter((o) => o.status !== 'annulee' && !o.isProforma);
+}
+
+export function customerSpend(db: ServerDatabase, customerId: string | undefined, windowDays: number): number {
+  if (!customerId) return 0;
+  const since = Date.now() - windowDays * 24 * 3600 * 1000;
+  return countedOrders(db)
+    .filter((o) => o.customerId === customerId && new Date(o.date).getTime() >= since)
+    .reduce((s, o) => s + (Number(o.totalDA) || 0), 0);
+}
+
+/** Recompute item prices and totals from the catalogue and the offers config. */
+export function priceOrderOnServer(
+  db: ServerDatabase,
+  order: Pick<PreOrder, 'items' | 'customerId' | 'totalDA'>,
+  offers: OffersConfig
+): Partial<PreOrder> {
+  const matched = order.items.map((it) => {
+    const product = db.products.find((p) => p.id === it.productId || (it.code && p.code === it.code));
+    return { it, product };
+  });
+  // If any line is not in the catalogue we cannot verify the order: keep what the client sent.
+  if (matched.length === 0 || matched.some((m) => !m.product)) return {};
+
+  const tier = pickLoyaltyTier(customerSpend(db, order.customerId, offers.loyalty.windowDays), offers);
+  const calc = computeCart(
+    matched.map((m) => ({ product: m.product!, quantity: Number(m.it.quantity) || 0 })),
+    offers,
+    tier
+  );
+  const items = matched.map((m, idx) => {
+    const line = calc.lines[idx];
+    return {
+      ...m.it,
+      productId: m.product!.id,
+      priceDA: line.unitPriceDA,
+      listPriceDA: line.listPriceDA,
+      totalDA: line.lineTotalDA,
+    };
+  });
+  return {
+    items,
+    subtotalDA: calc.subtotalDA,
+    discountDA: calc.discountDA,
+    totalDA: calc.totalDA,
+    appliedOffers: calc.appliedOffers,
+    loyaltyTier: calc.loyaltyTier?.name,
+  };
+}
+
+/** Distinct customers per product over the social-proof window (counts only, no names). */
+export async function getPopularProducts(): Promise<Record<string, number>> {
+  const db = await loadDatabaseAsync();
+  const offers = getOffersFromDb(db);
+  if (!offers.socialProof.enabled) return {};
+  const since = Date.now() - offers.socialProof.windowDays * 24 * 3600 * 1000;
+  const buyers = new Map<string, Set<string>>();
+  countedOrders(db)
+    .filter((o) => new Date(o.date).getTime() >= since)
+    .forEach((o) => {
+      const who = o.customerId || o.customer?.phone || o.id;
+      o.items.forEach((it) => {
+        if (!buyers.has(it.productId)) buyers.set(it.productId, new Set());
+        buyers.get(it.productId)!.add(who);
+      });
+    });
+  const out: Record<string, number> = {};
+  buyers.forEach((set, pid) => {
+    if (set.size >= offers.socialProof.minCustomers) out[pid] = set.size;
+  });
+  return out;
+}
+
+export async function getCustomerInsights(customerId: string, username: string) {
+  const db = await loadDatabaseAsync();
+  const user = db.customerUsers.find((u) => u.id === customerId);
+  if (!user || user.username.toLowerCase() !== String(username || '').toLowerCase() || user.status !== 'approved') {
+    return null;
+  }
+  const offers = getOffersFromDb(db);
+  const orders = db.orders.filter((o) => o.customerId === customerId);
+  const spend = customerSpend(db, customerId, offers.loyalty.windowDays);
+  const usage = new Map<string, { productId: string; count: number; lastQty: number; lastDate: string }>();
+  orders
+    .filter((o) => o.status !== 'annulee' && !o.isProforma)
+    .forEach((o) => {
+      o.items.forEach((it) => {
+        const cur = usage.get(it.productId);
+        if (!cur) {
+          usage.set(it.productId, { productId: it.productId, count: 1, lastQty: it.quantity, lastDate: o.date });
+        } else {
+          cur.count += 1;
+          if (new Date(o.date) > new Date(cur.lastDate)) {
+            cur.lastQty = it.quantity;
+            cur.lastDate = o.date;
+          }
+        }
+      });
+    });
+  const tier = pickLoyaltyTier(spend, offers);
+  const next = nextLoyaltyTier(spend, offers);
+  const counted = orders.filter((o) => o.status !== 'annulee' && !o.isProforma);
+  return {
+    orders,
+    stats: {
+      totalSpendDA: counted.reduce((s, o) => s + (Number(o.totalDA) || 0), 0),
+      ordersCount: counted.length,
+      since: counted.length ? counted.map((o) => o.date).sort()[0] : null,
+    },
+    usual: Array.from(usage.values()).sort((a, b) => b.count - a.count).slice(0, 12),
+    loyalty: {
+      spendDA: spend,
+      windowDays: offers.loyalty.windowDays,
+      tier: tier || null,
+      nextTier: next || null,
+    },
+  };
+}
+
+export async function addItemsToOrder(
+  orderId: string,
+  customerId: string,
+  extra: { productId: string; quantity: number }[]
+): Promise<{ ok: true; order: PreOrder; updatedProducts: Product[] } | { ok: false; status: number; error: string }> {
+  const db = await loadDatabaseAsync(true);
+  const offers = getOffersFromDb(db);
+  if (!offers.addToOrder.enabled) return { ok: false, status: 403, error: "L'ajout à une commande est désactivé." };
+  const order = db.orders.find((o) => o.id === orderId);
+  if (!order || !customerId || order.customerId !== customerId) {
+    return { ok: false, status: 404, error: 'Commande introuvable.' };
+  }
+  if (order.status !== 'en_attente' && order.status !== 'confirmee') {
+    return { ok: false, status: 409, error: 'Cette commande est déjà en préparation.' };
+  }
+  const ageMs = Date.now() - new Date(order.createdAt || order.date).getTime();
+  if (ageMs > offers.addToOrder.windowHours * 3600 * 1000) {
+    return { ok: false, status: 409, error: "Le délai pour ajouter des articles à cette commande est dépassé." };
+  }
+  const additions = (extra || []).filter((e) => e && e.productId && Number(e.quantity) > 0);
+  if (additions.length === 0) return { ok: false, status: 400, error: 'Aucun article à ajouter.' };
+
+  for (const add of additions) {
+    const prod = db.products.find((p) => p.id === add.productId);
+    if (!prod || prod.isHidden) return { ok: false, status: 404, error: 'Produit introuvable.' };
+    const qty = Math.min(Number(add.quantity), prod.stock);
+    if (qty <= 0) return { ok: false, status: 409, error: `Stock épuisé : ${prod.name}` };
+    const existing = order.items.find((i) => i.productId === prod.id);
+    if (existing) existing.quantity += qty;
+    else {
+      order.items.push({
+        productId: prod.id,
+        code: prod.code,
+        name: prod.name,
+        family: prod.family,
+        unit: prod.unit,
+        priceDA: prod.priceDA,
+        quantity: qty,
+        totalDA: prod.priceDA * qty,
+      });
+    }
+    prod.stock = Math.max(0, prod.stock - qty);
+    prod.lastUpdated = new Date().toISOString();
+  }
+
+  Object.assign(order, priceOrderOnServer(db, order, offers));
+  order.appliedOffers = [...(order.appliedOffers || []), 'Articles ajoutés après commande'];
+  await persistDatabaseAsync(db);
+  return { ok: true, order, updatedProducts: db.products };
+}
+
+// ---------------- SAVED CARTS & REMINDERS ----------------
+
+export async function upsertCart(cart: SavedCart | null, customerId: string): Promise<void> {
+  const db = await loadDatabaseAsync(true);
+  const list = (db.carts || []).filter((c) => c.customerId !== customerId);
+  if (cart && cart.items.length > 0) {
+    const previous = (db.carts || []).find((c) => c.customerId === customerId);
+    // Keep the reminder mark while the cart is unchanged in size, so staff are not pinged twice
+    list.push({ ...cart, remindedAt: previous && previous.items.length === cart.items.length ? previous.remindedAt : undefined });
+  }
+  db.carts = list;
+  await persistDatabaseAsync(db);
+}
+
+export interface DueReminders {
+  carts: SavedCart[];
+  reorders: { customerId: string; fullName: string; companyName?: string; phone?: string; lastOrderDate: string; daysSince: number }[];
+}
+
+export async function getDueReminders(): Promise<DueReminders> {
+  const db = await loadDatabaseAsync();
+  const offers = getOffersFromDb(db);
+  if (!offers.reminders.enabled) return { carts: [], reorders: [] };
+  const now = Date.now();
+  const cartCutoff = now - offers.reminders.abandonedCartAfterHours * 3600 * 1000;
+  const carts = (db.carts || []).filter((c) => {
+    if (c.remindedAt) return false;
+    if (new Date(c.updatedAt).getTime() > cartCutoff) return false;
+    const orderedSince = db.orders.some(
+      (o) => o.customerId === c.customerId && new Date(o.date).getTime() >= new Date(c.updatedAt).getTime()
+    );
+    return !orderedSince;
+  });
+
+  const reorderCutoff = now - offers.reminders.reorderAfterDays * 24 * 3600 * 1000;
+  const lastByCustomer = new Map<string, string>();
+  countedOrders(db).forEach((o) => {
+    if (!o.customerId) return;
+    const cur = lastByCustomer.get(o.customerId);
+    if (!cur || new Date(o.date) > new Date(cur)) lastByCustomer.set(o.customerId, o.date);
+  });
+  const reorders: DueReminders['reorders'] = [];
+  lastByCustomer.forEach((date, customerId) => {
+    if (new Date(date).getTime() > reorderCutoff) return;
+    const user = db.customerUsers.find((u) => u.id === customerId);
+    if (!user || user.status !== 'approved') return;
+    reorders.push({
+      customerId,
+      fullName: user.fullName,
+      companyName: user.companyName,
+      phone: user.phone,
+      lastOrderDate: date,
+      daysSince: Math.floor((now - new Date(date).getTime()) / (24 * 3600 * 1000)),
+    });
+  });
+  reorders.sort((a, b) => b.daysSince - a.daysSince);
+  return { carts, reorders: reorders.slice(0, 30) };
+}
+
+export async function markCartsReminded(customerIds: string[]): Promise<void> {
+  if (customerIds.length === 0) return;
+  const db = await loadDatabaseAsync(true);
+  const now = new Date().toISOString();
+  db.carts = (db.carts || []).map((c) => (customerIds.includes(c.customerId) ? { ...c, remindedAt: now } : c));
+  await persistDatabaseAsync(db);
+}
+
+
+// ---------------- WEB PUSH SUBSCRIPTIONS ----------------
+
+export async function savePushSubscription(rec: PushSubscriptionRecord): Promise<void> {
+  const db = await loadDatabaseAsync(true);
+  const list = (db.pushSubscriptions || []).filter((s) => s.endpoint !== rec.endpoint);
+  list.push(rec);
+  db.pushSubscriptions = list;
+  await persistDatabaseAsync(db);
+}
+
+export async function removePushSubscriptions(endpoints: string[]): Promise<void> {
+  if (endpoints.length === 0) return;
+  const db = await loadDatabaseAsync(true);
+  db.pushSubscriptions = (db.pushSubscriptions || []).filter((s) => !endpoints.includes(s.endpoint));
+  await persistDatabaseAsync(db);
+}
+
+export async function getPushSubscriptionsFor(customerId: string): Promise<PushSubscriptionRecord[]> {
+  const db = await loadDatabaseAsync();
+  return (db.pushSubscriptions || []).filter((s) => s.customerId === customerId);
+}
+
+
+// ---------------- PUSH PREFERENCES, CAP & LOG ----------------
+
+export async function getPushPrefs(customerId: string): Promise<{ marketing: boolean }> {
+  const db = await loadDatabaseAsync();
+  return db.pushPrefs?.[customerId] || { marketing: true };
+}
+
+export async function setPushPrefs(customerId: string, prefs: { marketing: boolean }): Promise<void> {
+  const db = await loadDatabaseAsync(true);
+  db.pushPrefs = { ...(db.pushPrefs || {}), [customerId]: { marketing: Boolean(prefs.marketing) } };
+  await persistDatabaseAsync(db);
+}
+
+export function algiersHour(date = new Date()): number {
+  return Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Africa/Algiers' }).format(date)) % 24;
+}
+
+export type PushDecision = { ok: true } | { ok: false; reason: string };
+
+/** Decides whether a push of this category may go out now, and records it when it does. */
+export async function reservePush(
+  customerId: string,
+  category: PushCategory,
+  ref?: string
+): Promise<PushDecision> {
+  const db = await loadDatabaseAsync(true);
+  const offers = getOffersFromDb(db);
+  const n = offers.notifications;
+  if (!n.enabled) return { ok: false, reason: 'disabled' };
+  const enabledByCategory: Record<PushCategory, boolean> = {
+    order_status: n.orderStatus,
+    cart: n.abandonedCart,
+    reorder: n.reorder,
+    loyalty: n.loyaltyLevelUp,
+  };
+  if (!enabledByCategory[category]) return { ok: false, reason: 'category_off' };
+  const log = db.pushLog || [];
+  if (ref && log.some((l) => l.customerId === customerId && l.category === category && l.ref === ref)) {
+    return { ok: false, reason: 'already_sent' };
+  }
+  if (category !== 'order_status') {
+    if (db.pushPrefs?.[customerId]?.marketing === false) return { ok: false, reason: 'opted_out' };
+    const hour = algiersHour();
+    if (hour < n.sendFromHour || hour >= n.sendToHour) return { ok: false, reason: 'quiet_hours' };
+    const marketing = log.filter((l) => l.customerId === customerId && l.category !== 'order_status');
+    const now = Date.now();
+    if (marketing.some((l) => now - new Date(l.at).getTime() < n.minHoursBetween * 3600 * 1000)) {
+      return { ok: false, reason: 'too_soon' };
+    }
+    if (marketing.filter((l) => now - new Date(l.at).getTime() < 7 * 24 * 3600 * 1000).length >= n.maxPerWeek) {
+      return { ok: false, reason: 'weekly_cap' };
+    }
+  }
+  const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+  db.pushLog = [...log.filter((l) => new Date(l.at).getTime() > cutoff), { customerId, category, ref, at: new Date().toISOString() }];
+  await persistDatabaseAsync(db);
+  return { ok: true };
+}
+
+export async function customerLoyaltyTierId(customerId: string, excludeOrderId?: string): Promise<{ before: string | null; after: string | null; name: string | null; perk?: string }> {
+  const db = await loadDatabaseAsync();
+  const offers = getOffersFromDb(db);
+  const spend = customerSpend(db, customerId, offers.loyalty.windowDays);
+  const order = excludeOrderId ? db.orders.find((o) => o.id === excludeOrderId) : undefined;
+  const before = pickLoyaltyTier(order ? spend - (Number(order.totalDA) || 0) : spend, offers);
+  const after = pickLoyaltyTier(spend, offers);
+  return { before: before?.id || null, after: after?.id || null, name: after?.name || null, perk: after?.perk };
 }

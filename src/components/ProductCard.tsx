@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Minus, Check, Sparkles, Layers, Wrench, Package, Lock, XCircle, Heart, Flame, ZoomIn } from 'lucide-react';
-import { Product } from '../types';
+import { OffersConfig, Product } from '../types';
+import { volumeNudge } from '../utils/offers';
 import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
@@ -18,6 +19,8 @@ interface ProductCardProps {
   isFavorite?: boolean;
   onToggleFavorite?: (productId: string) => void;
   isPriority?: boolean;
+  offers?: OffersConfig | null;
+  popularCount?: number;
 }
 
 const ProductCardComponent: React.FC<ProductCardProps> = ({
@@ -32,6 +35,8 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
   isFavorite = false,
   onToggleFavorite,
   isPriority = false,
+  offers = null,
+  popularCount = 0,
 }) => {
   const t = translations[lang];
   const isExtrait = product.family === 'Extrait';
@@ -100,6 +105,8 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
     setQtyInputValue(String(clamped));
   };
 
+  const nudge = isPricesVisible ? volumeNudge(product, cartQuantity + selectedQty, offers) : null;
+
   const handleAdd = () => {
     if (availableStock <= 0) return;
     const qtyToAdd = Math.min(selectedQty, availableStock);
@@ -125,7 +132,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
           const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
           onQuickView?.(product, isMobile);
         }}
-        className="relative h-48 bg-slate-100 overflow-hidden group cursor-zoom-in"
+        className="relative h-56 sm:h-48 bg-slate-100 overflow-hidden group cursor-zoom-in"
         title="Cliquer pour afficher la photo en grand format et zoomer"
       >
         <img
@@ -186,7 +193,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
 
           {/* BIG PROMO / SOLDE STICKER */}
           {hasDiscount && (
-            <span className="px-3.5 py-1 rounded-full text-xs sm:text-sm font-black bg-gradient-to-r from-[#9f0e4e] to-[#e11d48] text-white shadow-lg flex items-center gap-1.5 tracking-wider uppercase border-2 border-white animate-bounce">
+            <span className="px-3.5 py-1 rounded-full text-xs sm:text-sm font-black bg-gradient-to-r from-[#9f0e4e] to-[#e11d48] text-white shadow-lg flex items-center gap-1.5 tracking-wider uppercase border-2 border-white sm:animate-bounce">
               <span>🔥 -{product.discountPercent}%</span>
               <span>{t.soldeBadge}</span>
             </span>
@@ -238,7 +245,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                 e.stopPropagation();
                 onToggleFavorite(product.id);
               }}
-              className={`p-1.5 rounded-full backdrop-blur-md shadow-xs transition cursor-pointer ${
+              className={`p-2.5 sm:p-1.5 rounded-full backdrop-blur-md shadow-xs transition cursor-pointer ${
                 isFavorite
                   ? 'bg-rose-500 text-white hover:bg-rose-600 scale-105 shadow-rose-500/30'
                   : 'bg-white/90 hover:bg-white text-slate-400 hover:text-rose-500 border border-slate-200'
@@ -246,7 +253,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
               title={isFavorite ? t.removeFromFavorites : t.addToFavorites}
               aria-label={isFavorite ? t.removeFromFavorites : t.addToFavorites}
             >
-              <Heart className={`w-3.5 h-3.5 transition-transform ${isFavorite ? 'fill-current' : ''}`} />
+              <Heart className={`w-4 h-4 sm:w-3.5 sm:h-3.5 transition-transform ${isFavorite ? 'fill-current' : ''}`} />
             </button>
           )}
         </div>
@@ -266,7 +273,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
           </div>
 
           <h3
-            className="text-base font-black text-slate-900 line-clamp-2 leading-snug cursor-pointer hover:text-amber-700 transition-colors"
+            className="text-sm sm:text-base font-black text-slate-900 line-clamp-2 leading-snug cursor-pointer hover:text-amber-700 transition-colors"
             onClick={() => onQuickView?.(product)}
             title={localized.name}
           >
@@ -297,6 +304,17 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
           )}
         </div>
 
+        {popularCount > 0 && (
+          <div className="mt-1.5 sm:mt-2 text-xs sm:text-[11px] font-bold text-[#70083b] flex items-center gap-1">
+            <span>🔥</span>
+            <span>
+              {lang === 'ar'
+                ? `طلبه ${popularCount} عملاء هذا الشهر`
+                : `Commandé par ${popularCount} clients récemment`}
+            </span>
+          </div>
+        )}
+
         {/* Pricing and Action Row */}
         <div className="mt-3 pt-3 border-t border-slate-100">
           {!isPricesVisible ? (
@@ -316,7 +334,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
           ) : (
             <div className="flex items-baseline justify-between mb-2.5">
               <div>
-                <span className="text-[10px] text-slate-500 font-medium block">
+                <span className="text-xs sm:text-[10px] text-slate-500 font-medium block">
                   {isExtrait ? t.perGram : t.perPiece}
                 </span>
                 {hasDiscount ? (
@@ -355,9 +373,35 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
             </div>
           )}
 
+          {isPricesVisible && nudge && nudge.missing <= availableStock && (
+            <div className="mb-2.5 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between gap-2">
+              <span className="leading-snug">
+                <b className="text-sm">
+                  {lang === 'ar' ? 'أضف' : 'Ajoutez'} <bdi dir="ltr">+{nudge.missing}{isExtrait ? ' g' : ' pcs'}</bdi>
+                </b>
+                <br />
+                <bdi dir="ltr">
+                  {formatDZD(nudge.nextUnit)}{isExtrait ? '/g' : '/u'}
+                </bdi>{' '}
+                <span className="text-emerald-800/80">
+                  ({lang === 'ar' ? 'بدل' : 'au lieu de'} <bdi dir="ltr">{formatDZD(nudge.currentUnit)}</bdi>)
+                </span>
+                <br />
+                {lang === 'ar' ? 'توفر' : 'Économie'} <b><bdi dir="ltr">{formatDZD(nudge.savingDA)}</bdi></b>
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreset(Math.max(1, nudge.minQty - cartQuantity))}
+                className="shrink-0 px-3 py-2.5 sm:py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black cursor-pointer"
+              >
+                {lang === 'ar' ? `إلى ${nudge.minQty}` : `Passer à ${nudge.minQty}${isExtrait ? ' g' : ''}`}
+              </button>
+            </div>
+          )}
+
           {/* Extrait quick preset buttons */}
           {isExtrait && !isOutOfStock && !isAllInCart && (
-            <div className="flex items-center gap-1.5 mb-2.5 text-[10px]">
+            <div className="flex flex-wrap items-center gap-1.5 mb-2.5 text-xs sm:text-[10px]">
               <span className="text-slate-400 font-semibold mr-0.5">Presets :</span>
               {[100, 200, 300, 500].map((presetG) => {
                 if (presetG > availableStock && presetG !== 100) return null;
@@ -366,7 +410,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                     key={presetG}
                     type="button"
                     onClick={() => setPreset(presetG)}
-                    className={`px-2 py-0.5 rounded-md border font-bold transition cursor-pointer ${
+                    className={`px-2 py-0.5 max-sm:px-3.5 max-sm:py-3 rounded-md border font-bold transition cursor-pointer ${
                       selectedQty === presetG
                         ? 'bg-[#9f0e4e] text-white border-[#70083b] shadow-2xs'
                         : 'bg-rose-50/60 text-slate-700 border-rose-200/80 hover:bg-rose-100/60'
@@ -403,10 +447,10 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                     type="button"
                     onClick={decrement}
                     disabled={selectedQty <= 1}
-                    className="px-2.5 py-2 text-slate-700 hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
+                    className="px-4 py-3 sm:px-2.5 sm:py-2 text-slate-700 hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
                     aria-label="Diminuer la quantité"
                   >
-                    <Minus className="w-3.5 h-3.5" />
+                    <Minus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   </button>
 
                   <div className="px-1 flex items-center">
@@ -417,7 +461,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                       value={qtyInputValue}
                       onChange={handleQtyChange}
                       onBlur={handleBlur}
-                      className="w-14 text-center text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      className="w-14 text-center text-base sm:text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                     <span className="text-[10px] text-[#880e4f] font-bold pr-1">{isExtrait ? 'g' : ''}</span>
                   </div>
@@ -426,10 +470,10 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                     type="button"
                     onClick={increment}
                     disabled={selectedQty >= availableStock}
-                    className="px-2.5 py-2 text-slate-700 hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
+                    className="px-4 py-3 sm:px-2.5 sm:py-2 text-slate-700 hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
                     aria-label="Augmenter la quantité"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   </button>
                 </div>
 
@@ -437,7 +481,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                 <button
                   type="button"
                   onClick={handleAdd}
-                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer active:scale-95 ${
+                  className={`flex-1 py-3 sm:py-2 px-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer active:scale-95 ${
                     cartQuantity > 0
                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400/40'
                       : 'bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 text-white shadow-md'
@@ -461,7 +505,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
 
               {/* Status indicator: remains ON until finishing order or save for later */}
               {cartQuantity > 0 && (
-                <div className="flex items-center justify-between gap-2.5 text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1.5 rounded-xl font-bold">
+                <div className="flex items-center justify-between gap-2.5 text-xs sm:text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1.5 rounded-xl font-bold">
                   <div className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
                     <span>✓ {cartQuantity} {isExtrait ? 'g' : 'unités'} {t.inCart}</span>
@@ -471,7 +515,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                     <button
                       type="button"
                       onClick={() => onDecreaseCartQuantity(product.id, isExtrait ? 100 : 1)}
-                      className="px-2 py-1 text-[10px] font-black rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 hover:text-rose-950 border border-rose-200 hover:border-rose-300 transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                      className="px-2.5 py-2 sm:px-2 sm:py-1 text-xs sm:text-[10px] font-black rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 hover:text-rose-950 border border-rose-200 hover:border-rose-300 transition-all flex items-center gap-1 cursor-pointer shrink-0"
                       title={isExtrait ? "Retirer 100g" : "Retirer 1 unité"}
                     >
                       <Minus className="w-2.5 h-2.5 stroke-[3]" />

@@ -61,7 +61,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
 
   return (
     <div
-      className="sticky top-[58px] z-20 bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 shadow-2xs border border-rose-100 mb-4 sm:mb-6 space-y-3 transition-all"
+      className="sm:sticky sm:top-[58px] z-20 bg-white/95 backdrop-blur-md rounded-2xl p-3 sm:p-4 shadow-2xs border border-rose-100 mb-4 sm:mb-6 space-y-3 transition-all"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       {/* Top Flex Row: Search + Family Tabs + Quick Filters */}
@@ -75,7 +75,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={t.searchPlaceholder}
-            className={`w-full ${isRtl ? 'pr-9 pl-4' : 'pl-9 pr-4'} py-2 text-xs bg-rose-50/30 border border-rose-200/80 rounded-xl text-slate-900 focus:outline-hidden focus:border-[#9f0e4e] focus:ring-2 focus:ring-[#9f0e4e]/10 focus:bg-white transition`}
+            className={`w-full ${isRtl ? 'pr-9 pl-4' : 'pl-9 pr-4'} py-3 sm:py-2 text-base sm:text-xs bg-rose-50/30 border border-rose-200/80 rounded-xl text-slate-900 focus:outline-hidden focus:border-[#9f0e4e] focus:ring-2 focus:ring-[#9f0e4e]/10 focus:bg-white transition`}
           />
           {searchQuery && (
             <button
@@ -99,7 +99,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
               if (showOnlyFavorites && onToggleOnlyFavorites) onToggleOnlyFavorites();
               if (showOnlyTopSellers && onToggleOnlyTopSellers) onToggleOnlyTopSellers();
             }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer whitespace-nowrap ${
+            className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl transition cursor-pointer whitespace-nowrap ${
               selectedFamily === 'all' && !showOnlyFavorites && !showOnlyTopSellers
                 ? 'bg-gradient-to-r from-[#70083b] to-[#9f0e4e] text-white shadow-xs'
                 : 'bg-rose-50/60 text-slate-700 hover:bg-rose-100/60 hover:text-[#9f0e4e]'
@@ -116,7 +116,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
               if (showOnlyFavorites && onToggleOnlyFavorites) onToggleOnlyFavorites();
               if (showOnlyTopSellers && onToggleOnlyTopSellers) onToggleOnlyTopSellers();
             }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
+            className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
               selectedFamily === 'Extrait' && !showOnlyFavorites && !showOnlyTopSellers
                 ? 'bg-gradient-to-r from-[#70083b] to-[#9f0e4e] text-white shadow-xs'
                 : 'bg-rose-50/60 text-slate-700 hover:bg-rose-100/60 hover:text-[#9f0e4e]'
@@ -135,7 +135,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
               if (showOnlyFavorites && onToggleOnlyFavorites) onToggleOnlyFavorites();
               if (showOnlyTopSellers && onToggleOnlyTopSellers) onToggleOnlyTopSellers();
             }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
+            className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
               selectedFamily === 'Flacon' && !showOnlyFavorites && !showOnlyTopSellers
                 ? 'bg-gradient-to-r from-[#880e4f] to-[#be185d] text-white shadow-xs font-black'
                 : 'bg-rose-50/60 text-slate-700 hover:bg-rose-100/60 hover:text-[#9f0e4e]'
@@ -155,7 +155,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
               if (showOnlyFavorites && onToggleOnlyFavorites) onToggleOnlyFavorites();
               if (showOnlyTopSellers && onToggleOnlyTopSellers) onToggleOnlyTopSellers();
             }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
+            className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
               selectedFamily === 'Accessoire' && !showOnlyFavorites && !showOnlyTopSellers
                 ? 'bg-gradient-to-r from-[#70083b] to-[#9f0e4e] text-white shadow-xs font-black'
                 : 'bg-rose-50/60 text-slate-700 hover:bg-rose-100/60 hover:text-[#9f0e4e]'
@@ -171,7 +171,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
             <button
               type="button"
               onClick={onToggleOnlyTopSellers}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
+              className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                 showOnlyTopSellers
                   ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black shadow-xs ring-2 ring-amber-400/40'
                   : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200'
@@ -189,7 +189,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
             <button
               type="button"
               onClick={onToggleOnlyFavorites}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
+              className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                 showOnlyFavorites
                   ? 'bg-rose-600 text-white shadow-xs font-bold'
                   : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'

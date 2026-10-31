@@ -5,17 +5,17 @@ export function getClientSupabaseCredentials(): { url: string; key: string } {
   const globalEnv = typeof window !== 'undefined' ? (window as any).__TULIP_ENV__ || {} : {};
 
   const url = (
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
+    process.env.VITE_SUPABASE_URL ||
     globalEnv.VITE_SUPABASE_URL ||
     globalEnv.SUPABASE_URL ||
     ''
   ).trim();
 
   const key = (
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
     globalEnv.VITE_SUPABASE_ANON_KEY ||
     globalEnv.SUPABASE_ANON_KEY ||
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_SERVICE_ROLE_KEY) ||
+    process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ||
     globalEnv.SUPABASE_SERVICE_ROLE_KEY ||
     ''
   ).trim();
