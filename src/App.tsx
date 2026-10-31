@@ -3523,6 +3523,14 @@ export default function App() {
         isSwitching={Boolean(pendingInterface)}
         onSelectInterface={handleSelectInterface}
         cartCount={cart.length}
+        favoritesCount={favorites.length}
+        savedActive={showOnlyFavorites}
+        onOpenSaved={() => {
+          if ((pendingInterface || currentInterface) !== 'showroom') handleSelectInterface('showroom');
+          setShowOnlyFavorites((v) => !v);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onOpenOrders={() => setIsOrderTrackingOpen(true)}
         cartTotalDA={cartTotalDA}
         isPricesVisible={isPricesVisible}
         onOpenCart={() => setIsCartOpen(true)}
