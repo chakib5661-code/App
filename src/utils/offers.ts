@@ -169,6 +169,13 @@ export function volumeNudge(
 export function getUnitPrice(product: Product, quantity: number, offers: OffersConfig | null | undefined): number {
   const { applied } = resolveVolumeTier(product, quantity, offers);
   const base = applied ? applied.priceDA : product.priceDA;
+  // Clearance products: the customer gets the single lowest price (clearance OR volume), never both stacked.
+  if (product.clearance && applied) {
+    return Math.min(
+      calculateDiscountedPrice(product.priceDA, product.discountPercent),
+      calculateDiscountedPrice(applied.priceDA, 0)
+    );
+  }
   return calculateDiscountedPrice(base, product.discountPercent);
 }
 
