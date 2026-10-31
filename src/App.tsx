@@ -336,7 +336,19 @@ export default function App() {
   });
 
   // 4. Modal Controls & Admin Mode
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('tulip_admin_mode_v1') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (isAdminMode) localStorage.setItem('tulip_admin_mode_v1', '1');
+      else localStorage.removeItem('tulip_admin_mode_v1');
+    } catch {}
+  }, [isAdminMode]);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
 
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -1190,10 +1202,10 @@ export default function App() {
               ) {
                 setCurrentCustomer(updated);
               }
-            } else {
-              // Account removed or purged -> log out cleanly
-              setCurrentCustomer(null);
             }
+            // NOTE: if the account is not in the synced list we deliberately keep the session.
+            // The server (stateless / multi-instance on Vercel) may return a partial or empty list,
+            // and logging out here made users re-login after every refresh.
           }
         }
         if (Array.isArray(data.adBanners)) {
