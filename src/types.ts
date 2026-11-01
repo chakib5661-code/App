@@ -20,10 +20,21 @@ export interface Product {
   lastUpdated?: string;
   arabicName?: string;
   gender?: string;
+  brand?: string; // Brand name, used by the brand filter
   capacityMl?: string | number;
   lowStockThreshold?: number;
   tierPrices?: VolumeTier[]; // Volume price breaks (qty in grams for Extrait, units otherwise)
   relatedProductIds?: string[]; // Hand-picked cross-sell suggestions
+  clearance?: ClearanceInfo; // Set by the bulk clearance tool (Admin > Déstockage)
+}
+
+/** Marks a product as part of a clearance batch; lets the sale be undone or expire. */
+export interface ClearanceInfo {
+  batch: string; // batch id, e.g. 'clr-20261031-1'
+  startedAt: string; // ISO date
+  until?: string; // ISO date; the sale ends automatically after it
+  prevDiscount?: number; // discountPercent before the clearance (restored at the end)
+  group?: 'dead' | 'slow' | 'other';
 }
 
 export interface CartItem {

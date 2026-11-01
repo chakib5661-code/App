@@ -44,6 +44,7 @@ import {
   ExternalLink,
   FolderOpen,
   Gift,
+  Flame,
 } from 'lucide-react';
 import { Product, PreOrder, StoreSettings, AdminUser, CustomerApplication, CustomerUser, AdBanner, ManagerPermissions } from '../types';
 import { downloadOrderPDF, printOrderPDF, formatDZD } from '../utils/pdfGenerator';
@@ -58,6 +59,7 @@ import { AdminAdPopupManagement } from './AdminAdPopupManagement';
 import { AdminFlaconManagement } from './AdminFlaconManagement';
 import { AdminAccessoryManagement } from './AdminAccessoryManagement';
 import { AdminOffersManagement } from './AdminOffersManagement';
+import { AdminClearance } from './AdminClearance';
 import { AdminAnalytics } from './AdminAnalytics';
 import { AdminTelegramModal } from './AdminTelegramModal';
 import { IrreversibleConfirmModal } from './IrreversibleConfirmModal';
@@ -484,7 +486,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   };
 
   // Active Admin Tab
-  const [activeTab, setActiveTab] = useState<'stocks' | 'flacons' | 'accessories' | 'orders' | 'customers' | 'ads' | 'offers' | 'analytics' | 'users'>('stocks');
+  const [activeTab, setActiveTab] = useState<'stocks' | 'flacons' | 'accessories' | 'orders' | 'customers' | 'ads' | 'offers' | 'clearance' | 'analytics' | 'users'>('stocks');
 
   // Change password form state
   const [oldPassword, setOldPassword] = useState('');
@@ -1480,6 +1482,22 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             >
               <Gift className="w-4 h-4 shrink-0" />
               <span className="hidden sm:inline">Offres</span>
+            </button>
+          )}
+
+          {canAccessOffers && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('clearance')}
+              className={`px-3 sm:px-4 py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 sm:gap-2 transition cursor-pointer shrink-0 ${
+                activeTab === 'clearance'
+                  ? 'bg-rose-600 text-white shadow-md'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/70'
+              }`}
+              title="Déstockage en masse"
+            >
+              <Flame className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Déstockage</span>
             </button>
           )}
 
@@ -3127,6 +3145,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         {/* ============================================================== */}
         {activeTab === 'offers' && canAccessOffers && (
           <AdminOffersManagement products={products} orders={orders} onUpdateProduct={onUpdateProduct} />
+        )}
+
+        {activeTab === 'clearance' && canAccessOffers && (
+          <AdminClearance products={products} onUpdateProducts={onUpdateProducts} />
         )}
 
         {activeTab === 'analytics' && canAccessAnalytics && (

@@ -16,6 +16,7 @@ import {
   PushLogEntry,
   PushCategory,
 } from '../types';
+import { expireClearances } from '../utils/clearance';
 import { computeCart, normalizeOffers, pickLoyaltyTier, nextLoyaltyTier } from '../utils/offers';
 import { INITIAL_PRODUCTS, INITIAL_STORE_SETTINGS } from '../data/initialProducts';
 import { INITIAL_CUSTOMER_APPLICATIONS, INITIAL_AD_BANNERS } from '../data/initialCustomerData';
@@ -233,6 +234,9 @@ export async function loadDatabaseAsync(forceRefresh = false): Promise<ServerDat
           remoteDb.orders.sort(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
           );
+        }
+        if (expireClearances(remoteDb.products)) {
+          persistDatabaseAsync(remoteDb).catch(() => {});
         }
         cachedDb = remoteDb;
         lastSupabaseFetchTime = now;
@@ -1284,6 +1288,7 @@ export async function syncProducts(newProducts: Product[]): Promise<Product[]> {
     return {
       ...np,
       tierPrices: np.tierPrices ?? old.tierPrices,
+      clearance: np.clearance ?? old.clearance,
       relatedProductIds: np.relatedProductIds ?? old.relatedProductIds,
     };
   });

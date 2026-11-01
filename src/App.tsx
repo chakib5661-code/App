@@ -41,11 +41,12 @@ import { CartDrawer } from './components/CartDrawer';
 import { QuickOrderView } from './components/QuickOrderView';
 import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
+import { ClearanceBanner } from './components/ClearanceBanner';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppLanguage } from './translations';
 import { formatDZD } from './utils/formatDZD';
 import { trackCustomEvent, applyServerAnalyticsConfig } from './utils/analytics';
-import { isProductTopSeller, calculateDiscountedPrice } from './utils/productUtils';
+import { isProductTopSeller, calculateDiscountedPrice, normalizeGender, GenderKey } from './utils/productUtils';
 import { detectUserDevice, DeviceInfo } from './utils/deviceDetector';
 
 // Code-split heavy modals and administration tools to slash initial bundle size and boost Core Web Vitals (LCP, INP, CLS)
@@ -507,6 +508,9 @@ export default function App() {
   });
 
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
+  const [genderFilter, setGenderFilter] = useState<GenderKey | 'all'>('all');
+  const [brandFilter, setBrandFilter] = useState<string[]>([]);
+  const [showOnlyClearance, setShowOnlyClearance] = useState(false);
 
   useEffect(() => {
     try {
@@ -566,6 +570,9 @@ export default function App() {
     sortOption,
     showOnlyFavorites,
     showOnlyTopSellers,
+    genderFilter,
+    brandFilter,
+    showOnlyClearance,
   ]);
 
   // 2. Mobile Navigation: Handle phone "Return / Back" button and prevent accidental tab close
@@ -1618,6 +1625,48 @@ export default function App() {
     return products.filter((p) => !p.isHidden && isProductTopSeller(p)).length;
   }, [products]);
 
+  // Brand options (with counts) and per-gender counts for the filter UI
+  const brandOptions = useMemo(() => {
+    const m = new Map<string, number>();
+    products.forEach((p) => {
+      if (p.isHidden) return;
+      const b = (p.brand || '').trim();
+      if (b) m.set(b, (m.get(b) || 0) + 1);
+    });
+    return Array.from(m.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [products]);
+
+  const genderCounts = useMemo(() => {
+    const c = { men: 0, women: 0, unisex: 0 };
+    products.forEach((p) => {
+      if (p.isHidden) return;
+      const g = normalizeGender(p.gender);
+      if (g) c[g] += 1;
+    });
+    return c;
+  }, [products]);
+
+  const clearanceCount = useMemo(
+    () => products.filter((p) => !p.isHidden && (p.clearance || (p.discountPercent || 0) > 0)).length,
+    [products]
+  );
+
+  // Best discount and earliest end date among sale/clearance products (for the banner)
+  const clearanceInfo = useMemo(() => {
+    let maxDiscount = 0;
+    let endsAt: string | null = null;
+    const now = Date.now();
+    products.forEach((p) => {
+      if (p.isHidden || !(p.clearance || (p.discountPercent || 0) > 0)) return;
+      maxDiscount = Math.max(maxDiscount, p.discountPercent || 0);
+      const u = p.clearance?.until;
+      if (u && new Date(u).getTime() > now && (!endsAt || new Date(u) < new Date(endsAt))) endsAt = u;
+    });
+    return { maxDiscount, endsAt };
+  }, [products]);
+
   // Filtered & Sorted Products
   const filteredProducts = useMemo(() => {
     return products
@@ -1634,6 +1683,19 @@ export default function App() {
         // Family filter
         if (selectedFamily !== 'all' && p.family !== selectedFamily) return false;
 
+        // Gender filter
+        if (genderFilter !== 'all') {
+          const g = normalizeGender(p.gender);
+          // Unisex perfumes are shown under both Men and Women
+          if (g !== genderFilter && !(g === 'unisex' && genderFilter !== 'unisex')) return false;
+        }
+
+        // Brand filter (multi-select)
+        if (brandFilter.length > 0 && !brandFilter.includes((p.brand || '').trim())) return false;
+
+        // Clearance / sale filter
+        if (showOnlyClearance && !(p.clearance || (p.discountPercent || 0) > 0)) return false;
+
         // Stock filter
         if (stockFilter === 'in_stock' && p.stock <= 0) return false;
         if (stockFilter === 'low_stock' && (p.stock <= 0 || p.stock > (p.minAlertStock || 5))) return false;
@@ -1647,7 +1709,8 @@ export default function App() {
           const matchCategory = (p.category || '').toLowerCase().includes(q);
           const matchUnit = (p.unit || '').toLowerCase().includes(q);
           const matchOrigin = (p.origin || '').toLowerCase().includes(q);
-          if (!matchCode && !matchName && !matchCategory && !matchUnit && !matchOrigin) {
+          const matchBrand = (p.brand || '').toLowerCase().includes(q);
+          if (!matchCode && !matchName && !matchCategory && !matchUnit && !matchOrigin && !matchBrand) {
             return false;
           }
         }
@@ -1675,12 +1738,12 @@ export default function App() {
           }
         }
       });
-  }, [products, selectedFamily, stockFilter, deferredSearchQuery, sortOption, showOnlyFavorites, favorites, showOnlyTopSellers]);
+  }, [products, selectedFamily, stockFilter, deferredSearchQuery, sortOption, showOnlyFavorites, favorites, showOnlyTopSellers, genderFilter, brandFilter, showOnlyClearance]);
 
   // Reset pagination to page 1 whenever search, family, or stock filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedFamily, searchQuery, stockFilter, sortOption, showOnlyFavorites, showOnlyTopSellers]);
+  }, [selectedFamily, searchQuery, stockFilter, sortOption, showOnlyFavorites, showOnlyTopSellers, genderFilter, brandFilter, showOnlyClearance]);
 
   // Paginated Products (50 per page to optimize DOM rendering & browser scrolling)
   const productsPerPage = 50;
@@ -2144,6 +2207,9 @@ export default function App() {
     setSortOption('default');
     setShowOnlyFavorites(false);
     setShowOnlyTopSellers(false);
+    setGenderFilter('all');
+    setBrandFilter([]);
+    setShowOnlyClearance(false);
     setCurrentPage(1);
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3063,6 +3129,15 @@ export default function App() {
 
       {/* Main Catalog View */}
       <main className="max-w-7xl mx-auto px-4 py-6 sm:py-8 flex-1 w-full">
+        <ClearanceBanner
+          count={clearanceCount}
+          maxDiscount={clearanceInfo.maxDiscount}
+          endsAt={clearanceInfo.endsAt}
+          active={showOnlyClearance}
+          onToggle={() => setShowOnlyClearance((v) => !v)}
+          lang={currentLang}
+        />
+
         {/* Filters and Search Bar */}
         <ProductFilter
           searchQuery={searchQuery}
@@ -3084,6 +3159,17 @@ export default function App() {
           showOnlyTopSellers={showOnlyTopSellers}
           onToggleOnlyTopSellers={() => setShowOnlyTopSellers((prev) => !prev)}
           topSellersCount={topSellersCount}
+          genderFilter={genderFilter}
+          onSelectGender={setGenderFilter}
+          genderCounts={genderCounts}
+          brandOptions={brandOptions}
+          selectedBrands={brandFilter}
+          onToggleBrand={(b) =>
+            setBrandFilter((prev) => (prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]))
+          }
+          showOnlyClearance={showOnlyClearance}
+          onToggleOnlyClearance={() => setShowOnlyClearance((v) => !v)}
+          clearanceCount={clearanceCount}
         />
 
         {/* Real-time background stock update indicator */}
@@ -3137,7 +3223,7 @@ export default function App() {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-5">
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-5">
               {paginatedProducts.map((product, idx) => {
                 const inCartItem = cart.find((i) => i.product.id === product.id);
                 const cartQuantity = inCartItem ? inCartItem.quantity : 0;
@@ -3436,7 +3522,15 @@ export default function App() {
         currentInterface={pendingInterface || currentInterface}
         isSwitching={Boolean(pendingInterface)}
         onSelectInterface={handleSelectInterface}
-        cartCount={cartCount}
+        cartCount={cart.length}
+        favoritesCount={favorites.length}
+        savedActive={showOnlyFavorites}
+        onOpenSaved={() => {
+          if ((pendingInterface || currentInterface) !== 'showroom') handleSelectInterface('showroom');
+          setShowOnlyFavorites((v) => !v);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onOpenOrders={() => setIsOrderTrackingOpen(true)}
         cartTotalDA={cartTotalDA}
         isPricesVisible={isPricesVisible}
         onOpenCart={() => setIsCartOpen(true)}

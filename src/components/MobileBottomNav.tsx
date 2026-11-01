@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, LayoutGrid, ShoppingBag, Sparkles } from 'lucide-react';
+import { Loader2, LayoutGrid, ShoppingBag, Sparkles, Heart, ClipboardList } from 'lucide-react';
 import { formatDZD } from '../utils/formatDZD';
 
 interface MobileBottomNavProps {
@@ -11,6 +11,10 @@ interface MobileBottomNavProps {
   isPricesVisible: boolean;
   onOpenCart: () => void;
   lang?: string;
+  favoritesCount?: number;
+  savedActive?: boolean;
+  onOpenSaved?: () => void;
+  onOpenOrders?: () => void;
 }
 
 /** Thumb-reach navigation for phones: catalogue, quick order and the cart with its running total. */
@@ -23,6 +27,10 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   isPricesVisible,
   onOpenCart,
   lang = 'fr',
+  favoritesCount = 0,
+  savedActive = false,
+  onOpenSaved,
+  onOpenOrders,
 }) => {
   const tr = (ar: string, fr: string) => (lang === 'ar' ? ar : fr);
   const tab = (active: boolean) =>
@@ -59,13 +67,39 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           {isSwitching && currentInterface === 'quick' ? <Loader2 className="w-5 h-5 animate-spin" /> : <LayoutGrid className="w-5 h-5" />}
           {tr('طلب سريع', 'Rapide')}
         </button>
+        {onOpenSaved && (
+          <button type="button" className={tab(savedActive)} onClick={onOpenSaved}>
+            <span className="relative">
+              <Heart className={`w-5 h-5 ${savedActive ? 'fill-current' : ''}`} />
+              {favoritesCount > 0 && (
+                <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-[#9f0e4e] text-white text-[9px] font-black flex items-center justify-center">
+                  {favoritesCount}
+                </span>
+              )}
+            </span>
+            {tr('المفضلة', 'Favoris')}
+          </button>
+        )}
+        {onOpenOrders && (
+          <button type="button" className={tab(false)} onClick={onOpenOrders}>
+            <ClipboardList className="w-5 h-5" />
+            {tr('طلباتي', 'Suivi')}
+          </button>
+        )}
         <button
           id="btn-bottom-nav-cart"
           type="button"
           onClick={onOpenCart}
-          className="flex-[1.6] my-1.5 rounded-2xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white flex items-center justify-center gap-2 min-h-[48px] px-3 shadow-md active:scale-95 transition cursor-pointer"
+          className="flex-[1.4] my-1.5 rounded-2xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white flex items-center justify-center gap-2 min-h-[48px] px-3 shadow-md active:scale-95 transition cursor-pointer"
         >
-          <ShoppingBag className="w-5 h-5" />
+          <span className="relative">
+            <ShoppingBag className="w-5 h-5" />
+            {cartCount > 0 && (
+              <span className="absolute -top-2 -right-2.5 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-[#9f0e4e] text-[10px] font-black flex items-center justify-center">
+                {cartCount}
+              </span>
+            )}
+          </span>
           <span className="text-sm font-black truncate">
             {cartCount > 0 && isPricesVisible ? formatDZD(cartTotalDA) : tr('السلة', 'Panier')}
           </span>
