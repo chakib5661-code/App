@@ -15,8 +15,9 @@ import {
   User,
   WifiOff,
 } from 'lucide-react';
-import { ProductFamily, StoreSettings, CustomerUser, LoyaltyTier } from '../types';
+import { ProductFamily, StoreSettings, CustomerUser, LoyaltyTier, PreOrder } from '../types';
 import { AccountMenu, PushStatus } from './AccountMenu';
+import { DesktopMenu } from './DesktopMenu';
 import { INITIAL_STORE_SETTINGS } from '../data/initialProducts';
 import { formatDZD } from '../utils/formatDZD';
 import { TulipLogo } from './TulipLogo';
@@ -57,6 +58,11 @@ interface HeaderProps {
   marketingPush?: boolean;
   onToggleMarketing?: (value: boolean) => void;
   onEnablePush?: () => void;
+  favoritesCount?: number;
+  onOpenFavorites?: () => void;
+  invoices?: PreOrder[];
+  onDownloadInvoice?: (order: PreOrder) => Promise<void> | void;
+  onOpenAllInvoices?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -90,6 +96,11 @@ export const Header: React.FC<HeaderProps> = ({
   marketingPush = true,
   onToggleMarketing,
   onEnablePush,
+  favoritesCount = 0,
+  onOpenFavorites,
+  invoices = [],
+  onDownloadInvoice,
+  onOpenAllInvoices,
 }) => {
   const t = translations[lang];
   const isRtl = false; // Layout stays LTR for accessibility and right-handed reachability
@@ -192,6 +203,28 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-1.5 sm:gap-2.5">
           {/* CUSTOMER AUTHENTICATION STATUS */}
           {currentCustomer ? (
+            <>
+            {onOpenFavorites && onDownloadInvoice && onOpenAllInvoices ? (
+              <DesktopMenu
+                customer={currentCustomer}
+                lang={lang}
+                onSelectLanguage={onSelectLanguage}
+                isPricesVisible={isPricesVisible}
+                loyaltyTier={loyaltyTier}
+                nextTier={nextLoyaltyTier}
+                spendDA={loyaltySpendDA}
+                windowDays={loyaltyWindowDays}
+                favoritesCount={favoritesCount}
+                onOpenFavorites={onOpenFavorites}
+                onOpenOrderTracking={onOpenOrderTracking}
+                invoices={invoices}
+                onDownloadInvoice={onDownloadInvoice}
+                onOpenAllInvoices={onOpenAllInvoices}
+                onLogout={onLogoutCustomer}
+                pushStatus={pushStatus}
+                onEnablePush={onEnablePush}
+              />
+            ) : (
             <div className="max-sm:hidden">
             <AccountMenu
               customer={currentCustomer}
@@ -209,6 +242,8 @@ export const Header: React.FC<HeaderProps> = ({
               onEnablePush={onEnablePush}
             />
             </div>
+            )}
+            </>
           ) : (
             <div className="flex items-center gap-1.5">
               {onOpenCustomerAuth && (

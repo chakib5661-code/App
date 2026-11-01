@@ -2707,6 +2707,18 @@ export default function App() {
   };
 
   // IF ADMIN VIEW: RENDER FULL ADMIN PORTAL PAGE
+  // Customer's own invoices, newest first (cancelled orders excluded)
+  const myInvoices = currentCustomer
+    ? (myInsights ? myInsights.orders : orders)
+        .filter((o) => o.customerId === currentCustomer.id || o.customerUsername === currentCustomer.username)
+        .filter((o) => o.status !== 'annulee')
+        .sort((a, b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime())
+    : [];
+  const handleDownloadInvoice = async (order: PreOrder) => {
+    const { downloadOrderPDF } = await import('./utils/pdfGenerator');
+    await downloadOrderPDF(order, storeSettings, { hidePrices: !isPricesVisible });
+  };
+
   if (currentView === 'admin') {
     return (
       <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white font-bold text-sm">Chargement de l'administration Tulip...</div>}>
@@ -2804,6 +2816,11 @@ export default function App() {
         onEnablePush={() => {
           if (currentCustomer) enablePush(currentCustomer.id).then(setPushStatus);
         }}
+        favoritesCount={favorites.length}
+        onOpenFavorites={() => setIsManageFavoritesOpen(true)}
+        invoices={myInvoices}
+        onDownloadInvoice={handleDownloadInvoice}
+        onOpenAllInvoices={() => setIsInvoicesOpen(true)}
         currentInterface={currentInterface}
         onToggleInterface={handleSelectInterface}
         onOpenInterfaceChoiceModal={() => setIsInterfaceChoiceOpen(true)}
@@ -3588,9 +3605,7 @@ export default function App() {
         <MyInvoicesModal
           isOpen={isInvoicesOpen}
           onClose={() => setIsInvoicesOpen(false)}
-          orders={(myInsights ? myInsights.orders : orders).filter(
-            (o) => o.customerId === currentCustomer.id || o.customerUsername === currentCustomer.username
-          )}
+          orders={myInvoices}
           storeSettings={storeSettings}
           isPricesVisible={isPricesVisible}
           lang={currentLang}
