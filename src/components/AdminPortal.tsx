@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   ArrowLeft,
   LogOut,
+  Tags,
   FileSpreadsheet,
   PackageCheck,
   CheckCircle2,
@@ -60,6 +61,7 @@ import { AdminFlaconManagement } from './AdminFlaconManagement';
 import { AdminAccessoryManagement } from './AdminAccessoryManagement';
 import { AdminOffersManagement } from './AdminOffersManagement';
 import { AdminClearance } from './AdminClearance';
+import { AdminTagsImportModal } from './AdminTagsImportModal';
 import { AdminAnalytics } from './AdminAnalytics';
 import { AdminTelegramModal } from './AdminTelegramModal';
 import { IrreversibleConfirmModal } from './IrreversibleConfirmModal';
@@ -260,6 +262,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
   // Vercel Blob Extrait Images Association States
   const [isBlobImagesModalOpen, setIsBlobImagesModalOpen] = useState(false);
+  const [isTagsModalOpen, setIsTagsModalOpen] = useState(false);
   const [blobFolderName, setBlobFolderName] = useState(storeSettings?.vercelBlobFolderName || 'extraits');
   const [isSyncingBlobImages, setIsSyncingBlobImages] = useState(false);
   const [blobSyncResult, setBlobSyncResult] = useState<BlobExtraitSyncResult | null>(null);
@@ -1575,6 +1578,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-sky-900 text-sky-200 font-mono">
                         {storeSettings?.vercelBlobFolderName || blobFolderName || 'extraits'}
                       </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsTagsModalOpen(true)}
+                      className="px-3 py-1.5 rounded-lg bg-violet-950/60 hover:bg-violet-900/80 text-violet-300 text-xs font-semibold flex items-center gap-1.5 border border-violet-700/60 transition cursor-pointer shadow-sm"
+                      title="Importer marque / genre / style depuis un Excel (filtres du site)"
+                    >
+                      <Tags className="w-3.5 h-3.5 text-violet-400" />
+                      <span>Filtres Marque / Genre / Style</span>
                     </button>
 
                     <button
@@ -3162,6 +3175,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         onClose={() => setIsTelegramModalOpen(false)}
         storeSettings={storeSettings}
         onUpdateSettings={onUpdateSettings}
+      />
+
+      <AdminTagsImportModal
+        isOpen={isTagsModalOpen}
+        onClose={() => setIsTagsModalOpen(false)}
+        products={products}
+        onUpdateProducts={onUpdateProducts}
       />
 
       {/* Vercel Blob Extraits Images Modal */}
