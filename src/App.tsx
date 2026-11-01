@@ -42,6 +42,7 @@ import { QuickOrderView } from './components/QuickOrderView';
 import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
 import { ClearanceBanner } from './components/ClearanceBanner';
+import { ManageFavoritesModal } from './components/ManageFavoritesModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppLanguage } from './translations';
 import { formatDZD } from './utils/formatDZD';
@@ -508,6 +509,7 @@ export default function App() {
   });
 
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
+  const [isManageFavoritesOpen, setIsManageFavoritesOpen] = useState(false);
   const [genderFilter, setGenderFilter] = useState<GenderKey | 'all'>('all');
   const [brandFilter, setBrandFilter] = useState<string[]>([]);
   const [showOnlyClearance, setShowOnlyClearance] = useState(false);
@@ -3156,6 +3158,7 @@ export default function App() {
           favoritesCount={favorites.length}
           showOnlyFavorites={showOnlyFavorites}
           onToggleOnlyFavorites={() => setShowOnlyFavorites((prev) => !prev)}
+          onManageFavorites={() => setIsManageFavoritesOpen(true)}
           showOnlyTopSellers={showOnlyTopSellers}
           onToggleOnlyTopSellers={() => setShowOnlyTopSellers((prev) => !prev)}
           topSellersCount={topSellersCount}
@@ -3525,11 +3528,7 @@ export default function App() {
         cartCount={cart.length}
         favoritesCount={favorites.length}
         savedActive={showOnlyFavorites}
-        onOpenSaved={() => {
-          if ((pendingInterface || currentInterface) !== 'showroom') handleSelectInterface('showroom');
-          setShowOnlyFavorites((v) => !v);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        onOpenSaved={() => setIsManageFavoritesOpen(true)}
         onOpenOrders={() => setIsOrderTrackingOpen(true)}
         cartTotalDA={cartTotalDA}
         isPricesVisible={isPricesVisible}
@@ -3537,6 +3536,18 @@ export default function App() {
         lang={currentLang}
       />
       <div className="h-20 sm:hidden shrink-0" aria-hidden="true" />
+
+      <ManageFavoritesModal
+        isOpen={isManageFavoritesOpen}
+        onClose={() => setIsManageFavoritesOpen(false)}
+        products={products}
+        favorites={favorites}
+        onRemoveFavorite={handleToggleFavorite}
+        onClearFavorites={() => setFavorites([])}
+        onAddToCart={handleAddToCart}
+        isPricesVisible={isPricesVisible}
+        lang={currentLang}
+      />
 
       {/* Unified Sticky Bottom Order Bar across both Showroom and Quick Order interfaces */}
       <StickyBottomOrderBar
