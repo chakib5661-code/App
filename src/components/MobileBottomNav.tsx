@@ -1,15 +1,14 @@
 import React from 'react';
-import { Loader2, LayoutGrid, ShoppingBag, Sparkles, Heart, Menu } from 'lucide-react';
-import { formatDZD } from '../utils/formatDZD';
+import { Loader2, LayoutGrid, Sparkles, Heart, Menu } from 'lucide-react';
 
 interface MobileBottomNavProps {
   currentInterface: 'showroom' | 'quick';
   isSwitching?: boolean;
   onSelectInterface: (mode: 'showroom' | 'quick') => void;
-  cartCount: number;
-  cartTotalDA: number;
-  isPricesVisible: boolean;
-  onOpenCart: () => void;
+  cartCount?: number;
+  cartTotalDA?: number;
+  isPricesVisible?: boolean;
+  onOpenCart?: () => void;
   lang?: string;
   favoritesCount?: number;
   savedActive?: boolean;
@@ -17,15 +16,11 @@ interface MobileBottomNavProps {
   onOpenMenu?: () => void;
 }
 
-/** Thumb-reach navigation for phones: catalogue, quick order and the cart with its running total. */
+/** Thumb-reach navigation for phones: catalogue, quick order, favorites and the menu. */
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   currentInterface,
   isSwitching = false,
   onSelectInterface,
-  cartCount,
-  cartTotalDA,
-  isPricesVisible,
-  onOpenCart,
   lang = 'fr',
   favoritesCount = 0,
   savedActive = false,
@@ -86,24 +81,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             {tr('القائمة', 'Menu')}
           </button>
         )}
-        <button
-          id="btn-bottom-nav-cart"
-          type="button"
-          onClick={onOpenCart}
-          className="flex-[1.4] my-1.5 rounded-2xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white flex items-center justify-center gap-2 min-h-[48px] px-3 shadow-md active:scale-95 transition cursor-pointer"
-        >
-          <span className="relative">
-            <ShoppingBag className="w-5 h-5" />
-            {cartCount > 0 && (
-              <span className="absolute -top-2 -right-2.5 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-[#9f0e4e] text-[10px] font-black flex items-center justify-center">
-                {cartCount}
-              </span>
-            )}
-          </span>
-          <span className="text-sm font-black truncate">
-            {cartCount > 0 && isPricesVisible ? formatDZD(cartTotalDA) : tr('السلة', 'Panier')}
-          </span>
-        </button>
       </div>
     </nav>
   );

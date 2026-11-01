@@ -452,7 +452,47 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
               </span>
             </div>
           ) : (
-            <div className="space-y-2">
+            <>
+            {/* PHONE: one "+" button; after the first add it becomes a - qty + counter on the cart line */}
+            <div className="sm:hidden">
+              {cartQuantity === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => onAddToCart(product, Math.min(defaultQty, availableStock))}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white flex items-center justify-center gap-1.5 text-sm font-black shadow-sm active:scale-95 transition cursor-pointer"
+                  aria-label={t.addToPreorder}
+                >
+                  <Plus className="w-5 h-5" />
+                  {isExtrait && <span className="text-xs">100g</span>}
+                </button>
+              ) : (
+                <div className="flex items-center justify-between rounded-xl border border-emerald-300 bg-emerald-50 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => onDecreaseCartQuantity?.(product.id, step)}
+                    className="px-4 py-3 text-emerald-800 cursor-pointer active:bg-emerald-100"
+                    aria-label="Diminuer la quantité"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-black text-emerald-900">
+                    {cartQuantity}
+                    {isExtrait ? ' g' : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onAddToCart(product, Math.min(step, availableStock))}
+                    disabled={availableStock <= 0}
+                    className="px-4 py-3 text-emerald-800 disabled:opacity-30 cursor-pointer active:bg-emerald-100"
+                    aria-label="Augmenter la quantité"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 max-sm:hidden">
               <div className="flex items-center gap-1.5 sm:gap-2">
                 {/* Stepper with robust text input */}
                 <div className="flex items-center border border-rose-200/90 rounded-xl overflow-hidden bg-rose-50/40 shadow-inner">
@@ -544,6 +584,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                 </div>
               )}
             </div>
+            </>
           )}
         </div>
       </div>
