@@ -423,7 +423,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                     key={presetG}
                     type="button"
                     onClick={() => setPreset(presetG)}
-                    className={`px-2 py-0.5 max-sm:px-3.5 max-sm:py-3 rounded-md border font-bold transition cursor-pointer ${
+                    className={`px-2 py-0.5 max-sm:px-2.5 max-sm:py-1.5 rounded-md border font-bold transition cursor-pointer ${
                       selectedQty === presetG
                         ? 'bg-[#9f0e4e] text-white border-[#70083b] shadow-2xs'
                         : 'bg-rose-50/60 text-slate-700 border-rose-200/80 hover:bg-rose-100/60'
