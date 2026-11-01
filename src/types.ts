@@ -177,6 +177,8 @@ export interface CustomerUser {
   status: CustomerAccountStatus;
   createdAt?: string;
   lastLogin?: string;
+  /** Product ids the customer saved as favorites (synced across devices). */
+  favorites?: string[];
 }
 
 export interface AdBanner {

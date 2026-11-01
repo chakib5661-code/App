@@ -990,7 +990,7 @@ async function sendTelegramAccessRequestNotification(applicant: any) {
   app.put("/api/customers/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const updatedFields = req.body;
+      const { favorites: _ignoredFavorites, ...updatedFields } = req.body || {};
       const customer = await storeDb.updateCustomerDetails(id, updatedFields);
       if (!customer) {
         return res.status(404).json({ success: false, error: "Client introuvable." });
@@ -2059,6 +2059,28 @@ app.post("/api/orders/:id/add-items", async (req, res) => {
   } catch (err: any) {
     console.error("[API] POST /api/orders/:id/add-items error:", err);
     res.status(500).json({ error: "Erreur lors de l'ajout à la commande." });
+  }
+});
+
+app.get("/api/my-favorites", async (req, res) => {
+  try {
+    const favorites = await storeDb.getCustomerFavorites(String(req.query.customerId || ""));
+    if (!favorites) return res.status(404).json({ error: "Compte client introuvable." });
+    res.json({ success: true, favorites });
+  } catch {
+    res.status(500).json({ error: "Erreur." });
+  }
+});
+
+app.put("/api/my-favorites", async (req, res) => {
+  try {
+    const { customerId, favorites } = req.body || {};
+    if (!customerId || !Array.isArray(favorites)) return res.status(400).json({ error: "Requête invalide." });
+    const saved = await storeDb.setCustomerFavorites(String(customerId), favorites.map(String));
+    if (!saved) return res.status(404).json({ error: "Compte client introuvable." });
+    res.json({ success: true, favorites: saved });
+  } catch {
+    res.status(500).json({ error: "Erreur." });
   }
 });
 

@@ -91,6 +91,8 @@ import {
   bulkDeleteOrdersOnServer,
   fetchOffers,
   fetchMyOrders,
+  fetchMyFavorites,
+  saveMyFavorites,
   addItemsToOrderOnServer,
   saveCartOnServer,
   type MyOrdersResponse,
@@ -525,6 +527,33 @@ export default function App() {
       console.error(e);
     }
   }, [favorites]);
+
+  // Sync favorites with the customer account: on login merge server + local, afterwards save changes.
+  const favoritesSyncedFor = useRef<string | null>(null);
+  const customerIdForFavs = currentCustomer?.id || null;
+  useEffect(() => {
+    if (!customerIdForFavs) {
+      favoritesSyncedFor.current = null;
+      return;
+    }
+    let cancelled = false;
+    fetchMyFavorites(customerIdForFavs).then((server) => {
+      if (cancelled || !server) return;
+      setFavorites((local) => {
+        const merged = Array.from(new Set([...server, ...local]));
+        return merged.length === local.length && merged.every((id, i) => id === local[i]) ? local : merged;
+      });
+      favoritesSyncedFor.current = customerIdForFavs;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [customerIdForFavs]);
+  useEffect(() => {
+    if (customerIdForFavs && favoritesSyncedFor.current === customerIdForFavs) {
+      void saveMyFavorites(customerIdForFavs, favorites);
+    }
+  }, [favorites, customerIdForFavs]);
 
   const handleToggleFavorite = useCallback((productId: string) => {
     setFavorites((prev) => {

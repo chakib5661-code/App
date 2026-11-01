@@ -1065,6 +1065,21 @@ export async function deleteCustomer(customerId: string): Promise<boolean> {
   return true;
 }
 
+export async function getCustomerFavorites(customerId: string): Promise<string[] | null> {
+  const db = await loadDatabaseAsync();
+  const u = db.customerUsers.find((x) => x.id === customerId);
+  return u ? (Array.isArray(u.favorites) ? u.favorites : []) : null;
+}
+
+export async function setCustomerFavorites(customerId: string, favorites: string[]): Promise<string[] | null> {
+  const db = await loadDatabaseAsync(true);
+  const u = db.customerUsers.find((x) => x.id === customerId);
+  if (!u) return null;
+  u.favorites = Array.from(new Set(favorites.filter((f) => typeof f === 'string' && f))).slice(0, 2000);
+  await persistDatabaseAsync(db);
+  return u.favorites;
+}
+
 export async function updateCustomerDetails(customerId: string, updatedFields: Partial<CustomerUser>): Promise<CustomerUser | null> {
   const db = await loadDatabaseAsync(true);
   const userIndex = db.customerUsers.findIndex((u) => u.id === customerId);
