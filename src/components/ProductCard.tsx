@@ -440,20 +440,20 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 max-sm:flex-col max-sm:items-stretch">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 {/* Stepper with robust text input */}
-                <div className="flex items-center max-sm:justify-between border border-rose-200/90 rounded-xl overflow-hidden bg-rose-50/40 shadow-inner">
+                <div className="flex items-center border border-rose-200/90 rounded-xl overflow-hidden bg-rose-50/40 shadow-inner">
                   <button
                     type="button"
                     onClick={decrement}
                     disabled={selectedQty <= 1}
-                    className="px-4 py-3 max-sm:px-3 max-sm:py-2.5 sm:px-2.5 sm:py-2 text-slate-700 hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
+                    className="px-4 py-3 max-sm:px-1.5 max-sm:py-2.5 sm:px-2.5 sm:py-2 text-slate-700 hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
                     aria-label="Diminuer la quantité"
                   >
-                    <Minus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                    <Minus className="w-4 h-4 max-sm:w-3.5 max-sm:h-3.5 sm:w-3.5 sm:h-3.5" />
                   </button>
 
-                  <div className="px-1 flex items-center max-sm:flex-1 max-sm:justify-center">
+                  <div className="px-1 max-sm:px-0 flex items-center">
                     <input
                       type="number"
                       min={1}
@@ -461,7 +461,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                       value={qtyInputValue}
                       onChange={handleQtyChange}
                       onBlur={handleBlur}
-                      className="w-14 max-sm:w-full max-sm:min-w-0 text-center text-base sm:text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      className="w-14 max-sm:w-9 max-sm:min-w-0 text-center text-base sm:text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                     <span className="text-[10px] text-[#880e4f] font-bold pr-1">{isExtrait ? 'g' : ''}</span>
                   </div>
@@ -470,10 +470,10 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                     type="button"
                     onClick={increment}
                     disabled={selectedQty >= availableStock}
-                    className="px-4 py-3 max-sm:px-3 max-sm:py-2.5 sm:px-2.5 sm:py-2 text-slate-700 hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
+                    className="px-4 py-3 max-sm:px-1.5 max-sm:py-2.5 sm:px-2.5 sm:py-2 text-slate-700 hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
                     aria-label="Augmenter la quantité"
                   >
-                    <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                    <Plus className="w-4 h-4 max-sm:w-3.5 max-sm:h-3.5 sm:w-3.5 sm:h-3.5" />
                   </button>
                 </div>
 
@@ -481,7 +481,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                 <button
                   type="button"
                   onClick={handleAdd}
-                  className={`flex-1 max-sm:w-full py-3 sm:py-2 px-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer active:scale-95 ${
+                  className={`flex-1 min-w-0 py-3 sm:py-2 px-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer active:scale-95 ${
                     cartQuantity > 0
                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400/40'
                       : 'bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 text-white shadow-md'
@@ -490,14 +490,16 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                   {cartQuantity > 0 ? (
                     <>
                       <Check className="w-4 h-4" />
-                      <span>
+                      <span className="max-sm:hidden">
                         ✓ {t.addedToCart} (+{selectedQty}{isExtrait ? 'g' : ''})
                       </span>
+                      <span className="sm:hidden text-[11px]">+{selectedQty}{isExtrait ? 'g' : ''}</span>
                     </>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
-                      <span>{t.addToPreorder}</span>
+                      <span className="max-sm:hidden">{t.addToPreorder}</span>
+                      <span className="sm:hidden sr-only">{t.addToPreorder}</span>
                     </>
                   )}
                 </button>

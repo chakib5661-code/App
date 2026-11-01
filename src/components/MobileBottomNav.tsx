@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, LayoutGrid, ShoppingBag, Sparkles, Heart, ClipboardList } from 'lucide-react';
+import { Loader2, LayoutGrid, ShoppingBag, Sparkles, Heart, Menu } from 'lucide-react';
 import { formatDZD } from '../utils/formatDZD';
 
 interface MobileBottomNavProps {
@@ -14,7 +14,7 @@ interface MobileBottomNavProps {
   favoritesCount?: number;
   savedActive?: boolean;
   onOpenSaved?: () => void;
-  onOpenOrders?: () => void;
+  onOpenMenu?: () => void;
 }
 
 /** Thumb-reach navigation for phones: catalogue, quick order and the cart with its running total. */
@@ -30,7 +30,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   favoritesCount = 0,
   savedActive = false,
   onOpenSaved,
-  onOpenOrders,
+  onOpenMenu,
 }) => {
   const tr = (ar: string, fr: string) => (lang === 'ar' ? ar : fr);
   const tab = (active: boolean) =>
@@ -80,10 +80,10 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             {tr('المفضلة', 'Favoris')}
           </button>
         )}
-        {onOpenOrders && (
-          <button type="button" className={tab(false)} onClick={onOpenOrders}>
-            <ClipboardList className="w-5 h-5" />
-            {tr('طلباتي', 'Suivi')}
+        {onOpenMenu && (
+          <button type="button" className={tab(false)} onClick={onOpenMenu}>
+            <Menu className="w-5 h-5" />
+            {tr('القائمة', 'Menu')}
           </button>
         )}
         <button
