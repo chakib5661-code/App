@@ -216,14 +216,10 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenCustomerAuth('login')}
-                    className="max-sm:hidden relative px-4 sm:px-3.5 py-3 sm:py-2 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:from-[#880e4f] hover:to-[#be185d] text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md hover:scale-105 active:scale-95 ring-2 ring-rose-400/60 sm:ring-pink-500/30 shrink-0"
+                    className="relative px-3 max-sm:py-3 sm:px-3.5 sm:py-2 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:from-[#880e4f] hover:to-[#be185d] text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md hover:scale-105 active:scale-95 ring-2 ring-rose-400/60 sm:ring-pink-500/30 shrink-0"
                     title={t.loginBtn}
                   >
                     {/* Glowing notice indicator dot on mobile */}
-                    <span className="relative flex h-2 w-2 sm:hidden">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-300 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
-                    </span>
                     <Lock className="w-3.5 h-3.5 text-amber-200 shrink-0" />
                     <span className="whitespace-nowrap font-black">{t.loginBtn}</span>
                   </button>

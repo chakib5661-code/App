@@ -408,6 +408,15 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
             >
               {t.outOfStock}
             </button>
+          ) : cartQuantity === 0 ? (
+            <button
+              type="button"
+              onClick={() => setCartTo(isExtrait ? Math.min(100, product.stock) : 1)}
+              className="w-full py-3 sm:py-2.5 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 text-white flex items-center justify-center gap-2 text-sm sm:text-xs font-black shadow-md active:scale-95 transition cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{lang === 'ar' ? 'إضافة' : 'Ajouter'}</span>
+            </button>
           ) : (
             <div className="flex items-center justify-between gap-2 rounded-xl border border-rose-200/90 bg-rose-50/40 overflow-hidden">
               <button
