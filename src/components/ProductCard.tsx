@@ -414,32 +414,33 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                 type="button"
                 onClick={decrement}
                 disabled={cartQuantity <= 0}
-                className="px-5 py-3 sm:px-3.5 sm:py-2 text-[#9f0e4e] hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
+                className="px-3.5 py-3 sm:px-3.5 sm:py-2 shrink-0 text-[#9f0e4e] hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
                 aria-label="Diminuer la quantité"
               >
                 <Minus className="w-4 h-4" />
               </button>
-              <div className="flex items-center justify-center flex-1 min-w-0">
+              <div className="flex items-center justify-center flex-1 min-w-0 gap-0.5">
                 <input
                   type="number"
+                  inputMode="numeric"
                   min={0}
                   max={product.stock}
                   value={qtyInputValue}
                   onChange={handleQtyChange}
                   onBlur={handleBlur}
                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                  className={`w-20 max-sm:w-[4.5rem] min-w-0 text-center text-base sm:text-sm font-black bg-transparent focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                  className={`w-16 shrink-0 p-0 text-center text-base sm:text-sm font-black bg-transparent focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
                     cartQuantity > 0 ? 'text-emerald-800' : 'text-slate-400'
                   }`}
                   aria-label="Quantité dans le bon"
                 />
-                <span className="text-[11px] text-[#880e4f] font-bold">{isExtrait ? 'g' : ''}</span>
+                <span className="text-[11px] text-[#880e4f] font-bold shrink-0 w-2.5">{isExtrait ? 'g' : ''}</span>
               </div>
               <button
                 type="button"
                 onClick={increment}
                 disabled={cartQuantity >= product.stock}
-                className="px-5 py-3 sm:px-3.5 sm:py-2 text-[#9f0e4e] hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
+                className="px-3.5 py-3 sm:px-3.5 sm:py-2 shrink-0 text-[#9f0e4e] hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
                 aria-label="Augmenter la quantité"
               >
                 <Plus className="w-4 h-4" />
