@@ -21,6 +21,7 @@ export interface Product {
   arabicName?: string;
   gender?: string;
   brand?: string; // Brand name, used by the brand filter
+  style?: string; // Designer | Niche | Arabic | Own brand | Non-perfume (set by the tags import)
   capacityMl?: string | number;
   lowStockThreshold?: number;
   tierPrices?: VolumeTier[]; // Volume price breaks (qty in grams for Extrait, units otherwise)
