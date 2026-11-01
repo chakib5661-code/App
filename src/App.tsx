@@ -42,6 +42,7 @@ import { QuickOrderView } from './components/QuickOrderView';
 import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
 import { ClearanceBanner } from './components/ClearanceBanner';
+import { MobileMenuSheet } from './components/MobileMenuSheet';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppLanguage } from './translations';
 import { formatDZD } from './utils/formatDZD';
@@ -486,6 +487,7 @@ export default function App() {
 
   const [isInterfaceChoiceOpen, setIsInterfaceChoiceOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleConfirmLanguageSelection = (lang: AppLanguage) => {
     handleSelectLanguage(lang);
@@ -3530,13 +3532,44 @@ export default function App() {
           setShowOnlyFavorites((v) => !v);
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
-        onOpenOrders={() => setIsOrderTrackingOpen(true)}
+        onOpenMenu={() => setIsMobileMenuOpen(true)}
         cartTotalDA={cartTotalDA}
         isPricesVisible={isPricesVisible}
         onOpenCart={() => setIsCartOpen(true)}
         lang={currentLang}
       />
       <div className="h-20 sm:hidden shrink-0" aria-hidden="true" />
+
+      <MobileMenuSheet
+        open={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        lang={currentLang}
+        onSelectLanguage={handleSelectLanguage}
+        customer={currentCustomer}
+        loyaltyTier={loyaltyTier}
+        nextLoyaltyTier={myInsights?.loyalty?.nextTier || null}
+        loyaltySpendDA={myInsights?.loyalty?.spendDA || 0}
+        loyaltyWindowDays={myInsights?.loyalty?.windowDays || offers.loyalty.windowDays}
+        spendStats={myInsights?.stats || null}
+        pushStatus={pushStatus}
+        marketingPush={marketingPush}
+        onToggleMarketing={(v) => {
+          setMarketingPush(v);
+          if (currentCustomer) savePushPrefs(currentCustomer.id, v);
+        }}
+        onEnablePush={() => {
+          if (currentCustomer) enablePush(currentCustomer.id).then(setPushStatus);
+        }}
+        favoritesCount={favorites.length}
+        onOpenOrders={() => setIsOrderTrackingOpen(true)}
+        onOpenFavorites={() => {
+          if ((pendingInterface || currentInterface) !== 'showroom') handleSelectInterface('showroom');
+          setShowOnlyFavorites(true);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onLogin={handleRequireLogin}
+        onLogout={handleLogoutCustomer}
+      />
 
       {/* Unified Sticky Bottom Order Bar across both Showroom and Quick Order interfaces */}
       <StickyBottomOrderBar
