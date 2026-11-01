@@ -387,7 +387,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
           )}
 
           {isPricesVisible && nudge && nudge.missing <= availableStock && (
-            <div className="max-sm:hidden mb-2.5 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between max-sm:flex-col max-sm:items-stretch gap-2">
+            <div className="mb-2.5 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between max-sm:flex-col max-sm:items-stretch gap-2">
               <span className="leading-snug">
                 <b className="text-sm">
                   {lang === 'ar' ? 'أضف' : 'Ajoutez'} <bdi dir="ltr">+{nudge.missing}{isExtrait ? ' g' : ' pcs'}</bdi>
