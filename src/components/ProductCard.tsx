@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Minus, Check, Sparkles, Layers, Wrench, Package, Lock, XCircle, Heart, Flame, ZoomIn } from 'lucide-react';
 import { OffersConfig, Product } from '../types';
 import { volumeNudge } from '../utils/offers';
@@ -51,80 +51,38 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
   const isAllInCart = availableStock <= 0 && product.stock > 0;
   const isTopSeller = isProductTopSeller(product);
 
-  // For Extrait: default to 100g (1 full container) or remaining stock
+  // The quantity controls edit the cart line directly: what you see is what is in the cart.
   const step = isExtrait ? 100 : 1;
-  const defaultQty = isExtrait ? Math.min(100, Math.max(1, availableStock)) : 1;
-  const [selectedQty, setSelectedQty] = useState<number>(defaultQty);
-  const [qtyInputValue, setQtyInputValue] = useState<string>(String(defaultQty));
-  const [justAdded, setJustAdded] = useState(false);
-  const addedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (addedTimer.current) clearTimeout(addedTimer.current); }, []);
+  const selectedQty = cartQuantity;
+  const [qtyInputValue, setQtyInputValue] = useState<string>(String(cartQuantity));
 
   useEffect(() => {
-    if (availableStock > 0 && selectedQty > availableStock) {
-      setSelectedQty(availableStock);
-      setQtyInputValue(String(availableStock));
-    }
-  }, [availableStock]);
+    setQtyInputValue(String(cartQuantity));
+  }, [cartQuantity]);
+
+  const setCartTo = (target: number) => {
+    const next = Math.max(0, Math.min(product.stock, Math.round(target)));
+    const delta = next - cartQuantity;
+    if (delta > 0) onAddToCart(product, delta);
+    else if (delta < 0) onDecreaseCartQuantity?.(product.id, -delta);
+    setQtyInputValue(String(next));
+  };
 
   const handleQtyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    setQtyInputValue(raw);
-    const parsed = parseInt(raw, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      const clamped = Math.min(availableStock > 0 ? availableStock : 9999, parsed);
-      setSelectedQty(clamped);
-    }
+    setQtyInputValue(e.target.value);
   };
 
   const handleBlur = () => {
     const parsed = parseInt(qtyInputValue, 10);
-    if (isNaN(parsed) || parsed < 1) {
-      const fallback = Math.max(1, Math.min(availableStock > 0 ? availableStock : 1, defaultQty));
-      setSelectedQty(fallback);
-      setQtyInputValue(String(fallback));
-    } else {
-      const clamped = Math.max(1, Math.min(availableStock > 0 ? availableStock : 1, parsed));
-      setSelectedQty(clamped);
-      setQtyInputValue(String(clamped));
-    }
+    if (isNaN(parsed) || parsed < 0) setQtyInputValue(String(cartQuantity));
+    else setCartTo(parsed);
   };
 
-  const increment = () => {
-    const next = Math.min(availableStock, selectedQty + step);
-    setSelectedQty(next);
-    setQtyInputValue(String(next));
-  };
+  const increment = () => setCartTo(cartQuantity + step);
+  const decrement = () => setCartTo(cartQuantity - step);
+  const setPreset = (val: number) => setCartTo(val);
 
-  const decrement = () => {
-    const next = Math.max(1, selectedQty - step);
-    setSelectedQty(next);
-    setQtyInputValue(String(next));
-  };
-
-  const setPreset = (val: number) => {
-    const clamped = Math.min(availableStock, val);
-    setSelectedQty(clamped);
-    setQtyInputValue(String(clamped));
-  };
-
-  const nudge = isPricesVisible ? volumeNudge(product, cartQuantity + selectedQty, offers) : null;
-
-  const handleAdd = () => {
-    if (availableStock <= 0) return;
-    const qtyToAdd = Math.min(selectedQty, availableStock);
-    onAddToCart(product, qtyToAdd);
-    setJustAdded(true);
-    if (addedTimer.current) clearTimeout(addedTimer.current);
-    addedTimer.current = setTimeout(() => setJustAdded(false), 1200);
-    // Reset selectedQty for next add
-    const remaining = Math.max(0, availableStock - qtyToAdd);
-    if (remaining > 0) {
-      const nextDefault = isExtrait ? Math.min(100, remaining) : 1;
-      setSelectedQty(nextDefault);
-      setQtyInputValue(String(nextDefault));
-    }
-  };
+  const nudge = isPricesVisible && cartQuantity > 0 ? volumeNudge(product, cartQuantity, offers) : null;
 
   return (
     <div
@@ -381,7 +339,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
               </div>
               <div className="text-right max-sm:hidden">
                 <span className="text-[10px] text-slate-400 font-medium block">
-                  {isExtrait ? 'Sous-total sélectionné' : 'Total estimé'}
+                  {isExtrait ? 'Dans le bon' : 'Total estimé'}
                 </span>
                 {isExtrait && (
                   <span className="text-xs font-bold text-slate-700 font-mono">
@@ -410,7 +368,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
               </span>
               <button
                 type="button"
-                onClick={() => setPreset(Math.max(1, nudge.minQty - cartQuantity))}
+                onClick={() => setPreset(nudge.minQty)}
                 className="shrink-0 px-3 py-2.5 sm:py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black cursor-pointer"
               >
                 {lang === 'ar' ? `إلى ${nudge.minQty}` : `Passer à ${nudge.minQty}${isExtrait ? ' g' : ''}`}
@@ -419,11 +377,11 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
           )}
 
           {/* Extrait quick preset buttons */}
-          {isExtrait && !isOutOfStock && !isAllInCart && (
+          {isExtrait && !isOutOfStock && (
             <div className="max-sm:hidden flex flex-wrap items-center gap-1.5 mb-2.5 text-xs sm:text-[10px]">
               <span className="max-sm:hidden text-slate-400 font-semibold mr-0.5">Presets :</span>
               {[100, 200, 300, 500].map((presetG) => {
-                if (presetG > availableStock && presetG !== 100) return null;
+                if (presetG > product.stock && presetG !== 100) return null;
                 return (
                   <button
                     key={presetG}
@@ -450,102 +408,42 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
             >
               {t.outOfStock}
             </button>
-          ) : isAllInCart ? (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl py-2 px-3 text-center">
-              <span className="text-xs font-bold text-emerald-800 flex items-center justify-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                ✓ Tout le stock disponible est dans votre bon ({cartQuantity}{isExtrait ? 'g' : ''})
-              </span>
-            </div>
           ) : (
-            <div className="space-y-2">
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                {/* Stepper with robust text input */}
-                <div className="flex items-center border border-rose-200/90 rounded-xl overflow-hidden bg-rose-50/40 shadow-inner">
-                  <button
-                    type="button"
-                    onClick={decrement}
-                    disabled={selectedQty <= 1}
-                    className="px-4 py-3 max-sm:px-1.5 max-sm:py-2.5 sm:px-2.5 sm:py-2 text-slate-700 hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
-                    aria-label="Diminuer la quantité"
-                  >
-                    <Minus className="w-4 h-4 max-sm:w-3.5 max-sm:h-3.5 sm:w-3.5 sm:h-3.5" />
-                  </button>
-
-                  <div className="px-1 max-sm:px-0 flex items-center">
-                    <input
-                      type="number"
-                      min={1}
-                      max={availableStock}
-                      value={qtyInputValue}
-                      onChange={handleQtyChange}
-                      onBlur={handleBlur}
-                      className="w-14 max-sm:w-9 max-sm:min-w-0 text-center text-base sm:text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                    <span className="text-[10px] text-[#880e4f] font-bold pr-1">{isExtrait ? 'g' : ''}</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={increment}
-                    disabled={selectedQty >= availableStock}
-                    className="px-4 py-3 max-sm:px-1.5 max-sm:py-2.5 sm:px-2.5 sm:py-2 text-slate-700 hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
-                    aria-label="Augmenter la quantité"
-                  >
-                    <Plus className="w-4 h-4 max-sm:w-3.5 max-sm:h-3.5 sm:w-3.5 sm:h-3.5" />
-                  </button>
-                </div>
-
-                {/* Add / Added Button - Stays ON when in cart */}
-                <button
-                  type="button"
-                  onClick={handleAdd}
-                  className={`flex-1 min-w-0 py-3 sm:py-2 px-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer active:scale-95 text-white ${
-                    justAdded
-                      ? 'bg-emerald-600'
-                      : 'bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 shadow-md'
+            <div className="flex items-center justify-between gap-2 rounded-xl border border-rose-200/90 bg-rose-50/40 overflow-hidden">
+              <button
+                type="button"
+                onClick={decrement}
+                disabled={cartQuantity <= 0}
+                className="px-5 py-3 sm:px-3.5 sm:py-2 text-[#9f0e4e] hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
+                aria-label="Diminuer la quantité"
+              >
+                <Minus className="w-4 h-4" />
+              </button>
+              <div className="flex items-center justify-center flex-1 min-w-0">
+                <input
+                  type="number"
+                  min={0}
+                  max={product.stock}
+                  value={qtyInputValue}
+                  onChange={handleQtyChange}
+                  onBlur={handleBlur}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                  className={`w-20 max-sm:w-[4.5rem] min-w-0 text-center text-base sm:text-sm font-black bg-transparent focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                    cartQuantity > 0 ? 'text-emerald-800' : 'text-slate-400'
                   }`}
-                >
-                  {justAdded ? (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>{t.addedToCart}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4" />
-                      <span className="max-sm:hidden">{t.addToPreorder}</span>
-                      <span>+{selectedQty}{isExtrait ? 'g' : ''}</span>
-                    </>
-                  )}
-                </button>
+                  aria-label="Quantité dans le bon"
+                />
+                <span className="text-[11px] text-[#880e4f] font-bold">{isExtrait ? 'g' : ''}</span>
               </div>
-
-              {/* Status indicator: remains ON until finishing order or save for later */}
-              {cartQuantity > 0 && (
-                <div className="flex items-center justify-between gap-2.5 text-xs sm:text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1.5 rounded-xl font-bold">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                    <span>✓ {cartQuantity} {isExtrait ? 'g' : 'unités'} {t.inCart}</span>
-                  </div>
-                  
-                  {onDecreaseCartQuantity && (
-                    <button
-                      type="button"
-                      onClick={() => onDecreaseCartQuantity(product.id, isExtrait ? 100 : 1)}
-                      className="px-2.5 py-2 sm:px-2 sm:py-1 text-xs sm:text-[10px] font-black rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 hover:text-rose-950 border border-rose-200 hover:border-rose-300 transition-all flex items-center gap-1 cursor-pointer shrink-0"
-                      title={isExtrait ? "Retirer 100g" : "Retirer 1 unité"}
-                    >
-                      <Minus className="w-2.5 h-2.5 stroke-[3]" />
-                      <span>
-                        {lang === 'ar'
-                          ? (isExtrait ? 'إزالة 100غ' : 'إزالة قطعة')
-                          : (isExtrait ? 'Retirer 100g' : 'Retirer 1 unité')}
-                      </span>
-                    </button>
-                  )}
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={increment}
+                disabled={cartQuantity >= product.stock}
+                className="px-5 py-3 sm:px-3.5 sm:py-2 text-[#9f0e4e] hover:bg-rose-100/70 disabled:opacity-30 transition-colors cursor-pointer"
+                aria-label="Augmenter la quantité"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
             </div>
           )}
         </div>
