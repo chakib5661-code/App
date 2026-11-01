@@ -66,7 +66,12 @@ export const ManageFavoritesModal: React.FC<ManageFavoritesModalProps> = ({
     const clamped = Math.max(1, Math.min(p.stock || 1, Math.floor(value) || 1));
     setQuantities((prev) => ({ ...prev, [p.id]: clamped }));
   };
-  const step = (p: Product) => (p.family === 'Extrait' ? 10 : 1);
+  const step = (p: Product) => (p.family === 'Extrait' ? 100 : 1);
+  const stepBy = (p: Product, dir: 1 | -1) => {
+    const next = qtyOf(p) + dir * step(p);
+    const min = Math.min(step(p), p.stock || 1);
+    setQty(p, Math.max(min, next));
+  };
   const unitLabel = (p: Product) => (p.family === 'Extrait' ? 'g' : tr('وحدة', 'u.'));
   const inStock = (p: Product) => p.stock > 0;
 
@@ -187,7 +192,7 @@ export const ManageFavoritesModal: React.FC<ManageFavoritesModalProps> = ({
                             <button
                               type="button"
                               className="p-1.5 hover:bg-slate-100"
-                              onClick={() => setQty(p, qty - step(p))}
+                              onClick={() => stepBy(p, -1)}
                               aria-label="-"
                             >
                               <Minus className="w-3.5 h-3.5" />
@@ -205,7 +210,7 @@ export const ManageFavoritesModal: React.FC<ManageFavoritesModalProps> = ({
                             <button
                               type="button"
                               className="p-1.5 hover:bg-slate-100"
-                              onClick={() => setQty(p, qty + step(p))}
+                              onClick={() => stepBy(p, 1)}
                               aria-label="+"
                             >
                               <Plus className="w-3.5 h-3.5" />
