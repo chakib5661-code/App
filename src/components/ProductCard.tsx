@@ -423,7 +423,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                     key={presetG}
                     type="button"
                     onClick={() => setPreset(presetG)}
-                    className={`px-2 py-0.5 max-sm:px-2 max-sm:py-1 rounded-md border font-bold transition cursor-pointer ${
+                    className={`px-2 py-0.5 max-sm:px-3.5 max-sm:py-3 rounded-md border font-bold transition cursor-pointer ${
                       selectedQty === presetG
                         ? 'bg-[#9f0e4e] text-white border-[#70083b] shadow-2xs'
                         : 'bg-rose-50/60 text-slate-700 border-rose-200/80 hover:bg-rose-100/60'
@@ -455,30 +455,41 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
             <>
             {/* PHONE: one "+" button; after the first add it becomes a - qty + counter on the cart line */}
             <div className="sm:hidden">
-              <div className="flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50/60 overflow-hidden">
+              {cartQuantity === 0 ? (
                 <button
                   type="button"
-                  onClick={() => onDecreaseCartQuantity?.(product.id, step)}
-                  disabled={cartQuantity <= 0}
-                  className="px-4 py-3 text-[#9f0e4e] disabled:opacity-30 cursor-pointer active:bg-rose-100"
-                  aria-label="Diminuer la quantité"
+                  onClick={() => onAddToCart(product, Math.min(defaultQty, availableStock))}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white flex items-center justify-center gap-1.5 text-sm font-black shadow-sm active:scale-95 transition cursor-pointer"
+                  aria-label={t.addToPreorder}
                 >
-                  <Minus className="w-4 h-4" />
+                  <Plus className="w-5 h-5" />
+                  {isExtrait && <span className="text-xs">100g</span>}
                 </button>
-                <span className={`text-sm font-black ${cartQuantity > 0 ? 'text-emerald-800' : 'text-slate-500'}`}>
-                  {cartQuantity}
-                  {isExtrait ? ' g' : ''}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onAddToCart(product, Math.min(step, availableStock))}
-                  disabled={availableStock <= 0}
-                  className="px-4 py-3 text-[#9f0e4e] disabled:opacity-30 cursor-pointer active:bg-rose-100"
-                  aria-label="Augmenter la quantité"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
+              ) : (
+                <div className="flex items-center justify-between rounded-xl border border-emerald-300 bg-emerald-50 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => onDecreaseCartQuantity?.(product.id, step)}
+                    className="px-4 py-3 text-emerald-800 cursor-pointer active:bg-emerald-100"
+                    aria-label="Diminuer la quantité"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-black text-emerald-900">
+                    {cartQuantity}
+                    {isExtrait ? ' g' : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onAddToCart(product, Math.min(step, availableStock))}
+                    disabled={availableStock <= 0}
+                    className="px-4 py-3 text-emerald-800 disabled:opacity-30 cursor-pointer active:bg-emerald-100"
+                    aria-label="Augmenter la quantité"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2 max-sm:hidden">
