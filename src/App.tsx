@@ -43,6 +43,7 @@ import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
 import { ClearanceBanner } from './components/ClearanceBanner';
 import { ManageFavoritesModal } from './components/ManageFavoritesModal';
+import { MyInvoicesModal } from './components/MyInvoicesModal';
 import { MobileMenuSheet } from './components/MobileMenuSheet';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppLanguage } from './translations';
@@ -489,6 +490,7 @@ export default function App() {
   const [isInterfaceChoiceOpen, setIsInterfaceChoiceOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isInvoicesOpen, setIsInvoicesOpen] = useState(false);
 
   const handleConfirmLanguageSelection = (lang: AppLanguage) => {
     handleSelectLanguage(lang);
@@ -3577,9 +3579,23 @@ export default function App() {
           setIsMobileMenuOpen(false);
           setIsManageFavoritesOpen(true);
         }}
+        onOpenInvoices={() => setIsInvoicesOpen(true)}
         onLogin={handleRequireLogin}
         onLogout={handleLogoutCustomer}
       />
+
+      {currentCustomer && (
+        <MyInvoicesModal
+          isOpen={isInvoicesOpen}
+          onClose={() => setIsInvoicesOpen(false)}
+          orders={(myInsights ? myInsights.orders : orders).filter(
+            (o) => o.customerId === currentCustomer.id || o.customerUsername === currentCustomer.username
+          )}
+          storeSettings={storeSettings}
+          isPricesVisible={isPricesVisible}
+          lang={currentLang}
+        />
+      )}
 
       {/* Unified Sticky Bottom Order Bar across both Showroom and Quick Order interfaces */}
       <StickyBottomOrderBar

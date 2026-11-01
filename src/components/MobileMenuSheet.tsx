@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ClipboardList, Heart, LogIn, UserRound } from 'lucide-react';
+import { X, ClipboardList, Heart, LogIn, UserRound, FileText } from 'lucide-react';
 import type { AppLanguage } from '../translations';
 import type { CustomerUser, LoyaltyTier } from '../types';
 import { AccountMenu, PushStatus } from './AccountMenu';
@@ -23,6 +23,7 @@ interface MobileMenuSheetProps {
   favoritesCount: number;
   onOpenOrders: () => void;
   onOpenFavorites: () => void;
+  onOpenInvoices?: () => void;
   onLogin: () => void;
   onLogout: () => void;
 }
@@ -46,6 +47,7 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
   favoritesCount,
   onOpenOrders,
   onOpenFavorites,
+  onOpenInvoices,
   onLogin,
   onLogout,
 }) => {
@@ -125,6 +127,11 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
             <span className="flex items-center gap-3"><Heart className="w-5 h-5 text-[#9f0e4e]" />{L('Mes favoris', 'My favorites', 'مفضلتي')}</span>
             {favoritesCount > 0 && <span className="text-xs font-black text-[#9f0e4e]">{favoritesCount}</span>}
           </button>
+          {customer && onOpenInvoices && (
+            <button type="button" className={row} onClick={run(onOpenInvoices)}>
+              <span className="flex items-center gap-3"><FileText className="w-5 h-5 text-[#9f0e4e]" />{L('Mes factures', 'My invoices', 'فواتيري')}</span>
+            </button>
+          )}
           {!customer && (
             <button type="button" className={row} onClick={run(onLogin)}>
               <span className="flex items-center gap-3"><LogIn className="w-5 h-5 text-[#9f0e4e]" />{L('Connexion / Demander l\u2019accès', 'Log in / Request access', 'تسجيل الدخول / طلب الوصول')}</span>
