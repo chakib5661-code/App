@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Minus, Check, Sparkles, Layers, Wrench, Package, Lock, XCircle, Heart, Flame, ZoomIn } from 'lucide-react';
 import { OffersConfig, Product } from '../types';
 import { volumeNudge } from '../utils/offers';
@@ -56,6 +56,9 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
   const defaultQty = isExtrait ? Math.min(100, Math.max(1, availableStock)) : 1;
   const [selectedQty, setSelectedQty] = useState<number>(defaultQty);
   const [qtyInputValue, setQtyInputValue] = useState<string>(String(defaultQty));
+  const [justAdded, setJustAdded] = useState(false);
+  const addedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (addedTimer.current) clearTimeout(addedTimer.current); }, []);
 
   useEffect(() => {
     if (availableStock > 0 && selectedQty > availableStock) {
@@ -111,6 +114,9 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
     if (availableStock <= 0) return;
     const qtyToAdd = Math.min(selectedQty, availableStock);
     onAddToCart(product, qtyToAdd);
+    setJustAdded(true);
+    if (addedTimer.current) clearTimeout(addedTimer.current);
+    addedTimer.current = setTimeout(() => setJustAdded(false), 1200);
     // Reset selectedQty for next add
     const remaining = Math.max(0, availableStock - qtyToAdd);
     if (remaining > 0) {
@@ -494,25 +500,22 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                 <button
                   type="button"
                   onClick={handleAdd}
-                  className={`flex-1 min-w-0 py-3 sm:py-2 px-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer active:scale-95 ${
-                    cartQuantity > 0
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400/40'
-                      : 'bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 text-white shadow-md'
+                  className={`flex-1 min-w-0 py-3 sm:py-2 px-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer active:scale-95 text-white ${
+                    justAdded
+                      ? 'bg-emerald-600'
+                      : 'bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 shadow-md'
                   }`}
                 >
-                  {cartQuantity > 0 ? (
+                  {justAdded ? (
                     <>
                       <Check className="w-4 h-4" />
-                      <span className="max-sm:hidden">
-                        ✓ {t.addedToCart} (+{selectedQty}{isExtrait ? 'g' : ''})
-                      </span>
-                      <span className="sm:hidden text-[11px]">+{selectedQty}{isExtrait ? 'g' : ''}</span>
+                      <span>{t.addedToCart}</span>
                     </>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
                       <span className="max-sm:hidden">{t.addToPreorder}</span>
-                      <span className="sm:hidden sr-only">{t.addToPreorder}</span>
+                      <span>+{selectedQty}{isExtrait ? 'g' : ''}</span>
                     </>
                   )}
                 </button>
