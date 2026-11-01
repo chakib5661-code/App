@@ -414,7 +414,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
 
           {/* Extrait quick preset buttons */}
           {isExtrait && !isOutOfStock && !isAllInCart && (
-            <div className="flex flex-wrap items-center gap-1 mb-1.5 text-xs sm:text-[10px] sm:gap-1.5 sm:mb-2.5">
+            <div className="max-sm:hidden flex flex-wrap items-center gap-1.5 mb-2.5 text-xs sm:text-[10px]">
               <span className="max-sm:hidden text-slate-400 font-semibold mr-0.5">Presets :</span>
               {[100, 200, 300, 500].map((presetG) => {
                 if (presetG > availableStock && presetG !== 100) return null;
@@ -455,20 +455,30 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
             <>
             {/* PHONE: one "+" button; after the first add it becomes a - qty + counter on the cart line */}
             <div className="sm:hidden">
-              {cartQuantity > 0 && (
-                <div className="text-[11px] font-bold text-emerald-700 text-center mb-1">
-                  ✓ {cartQuantity}{isExtrait ? ' g' : ''}
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => onAddToCart(product, Math.min(selectedQty, availableStock))}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white flex items-center justify-center gap-1.5 text-sm font-black shadow-sm active:scale-95 transition cursor-pointer"
-                aria-label={t.addToPreorder}
-              >
-                <Plus className="w-5 h-5" />
-                {isExtrait && <span className="text-xs">{selectedQty}g</span>}
-              </button>
+              <div className="flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50/60 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => onDecreaseCartQuantity?.(product.id, step)}
+                  disabled={cartQuantity <= 0}
+                  className="px-4 py-3 text-[#9f0e4e] disabled:opacity-30 cursor-pointer active:bg-rose-100"
+                  aria-label="Diminuer la quantité"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <span className={`text-sm font-black ${cartQuantity > 0 ? 'text-emerald-800' : 'text-slate-500'}`}>
+                  {cartQuantity}
+                  {isExtrait ? ' g' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onAddToCart(product, Math.min(step, availableStock))}
+                  disabled={availableStock <= 0}
+                  className="px-4 py-3 text-[#9f0e4e] disabled:opacity-30 cursor-pointer active:bg-rose-100"
+                  aria-label="Augmenter la quantité"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2 max-sm:hidden">
