@@ -1,15 +1,25 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ClipboardList, Heart, LogIn, LogOut, UserRound, Star } from 'lucide-react';
+import { X, ClipboardList, Heart, LogIn, UserRound } from 'lucide-react';
 import type { AppLanguage } from '../translations';
+import type { CustomerUser, LoyaltyTier } from '../types';
+import { AccountMenu, PushStatus } from './AccountMenu';
 
 interface MobileMenuSheetProps {
   open: boolean;
   onClose: () => void;
   lang: AppLanguage;
   onSelectLanguage: (lang: AppLanguage) => void;
-  customerName?: string | null;
-  loyaltyName?: string | null;
+  customer?: CustomerUser | null;
+  loyaltyTier?: LoyaltyTier | null;
+  nextLoyaltyTier?: LoyaltyTier | null;
+  loyaltySpendDA?: number;
+  loyaltyWindowDays?: number;
+  spendStats?: { totalSpendDA: number; ordersCount: number; since: string | null } | null;
+  pushStatus?: PushStatus;
+  marketingPush?: boolean;
+  onToggleMarketing?: (value: boolean) => void;
+  onEnablePush?: () => void;
   favoritesCount: number;
   onOpenOrders: () => void;
   onOpenFavorites: () => void;
@@ -23,8 +33,16 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
   onClose,
   lang,
   onSelectLanguage,
-  customerName,
-  loyaltyName,
+  customer,
+  loyaltyTier,
+  nextLoyaltyTier,
+  loyaltySpendDA = 0,
+  loyaltyWindowDays = 90,
+  spendStats = null,
+  pushStatus = 'unsupported',
+  marketingPush = true,
+  onToggleMarketing,
+  onEnablePush,
   favoritesCount,
   onOpenOrders,
   onOpenFavorites,
@@ -67,35 +85,49 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
           </button>
         </div>
 
-        <div className="mx-4 mb-3 rounded-2xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white px-4 py-3 flex items-center gap-3">
-          <span className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center shrink-0"><UserRound className="w-5 h-5" /></span>
-          <div className="min-w-0 flex-1" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
-            <div className="font-black truncate">{customerName || L('Visiteur', 'Guest', 'زائر')}</div>
-            <div className="text-xs text-rose-100 truncate flex items-center gap-1">
-              {customerName ? (
-                loyaltyName ? (<><Star className="w-3 h-3" />{loyaltyName}</>) : L('Compte professionnel', 'Professional account', 'حساب مهني')
-              ) : (
-                L('Connectez-vous pour voir les prix', 'Log in to see prices', 'سجّل الدخول لرؤية الأسعار')
-              )}
+        {customer ? (
+          <div className="mx-4 mb-3">
+            <AccountMenu
+              inline
+              customer={customer}
+              lang={lang}
+              loyaltyTier={loyaltyTier}
+              nextTier={nextLoyaltyTier}
+              spendDA={loyaltySpendDA}
+              windowDays={loyaltyWindowDays}
+              spendStats={spendStats}
+              onOpenOrderTracking={onOpenOrders}
+              onLogout={onLogout}
+              pushStatus={pushStatus}
+              marketingPush={marketingPush}
+              onToggleMarketing={onToggleMarketing}
+              onEnablePush={onEnablePush}
+              onAfterAction={onClose}
+            />
+          </div>
+        ) : (
+          <div className="mx-4 mb-3 rounded-2xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] text-white px-4 py-3 flex items-center gap-3">
+            <span className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center shrink-0"><UserRound className="w-5 h-5" /></span>
+            <div className="min-w-0 flex-1" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+              <div className="font-black truncate">{L('Visiteur', 'Guest', 'زائر')}</div>
+              <div className="text-xs text-rose-100 truncate">{L('Connectez-vous pour voir les prix', 'Log in to see prices', 'سجّل الدخول لرؤية الأسعار')}</div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="mx-4 rounded-2xl border border-slate-200 overflow-hidden">
-          <button type="button" className={row} onClick={run(onOpenOrders)}>
-            <span className="flex items-center gap-3"><ClipboardList className="w-5 h-5 text-[#9f0e4e]" />{L('Suivre ma commande', 'Track my order', 'تتبع طلبي')}</span>
-          </button>
+          {!customer && (
+            <button type="button" className={row} onClick={run(onOpenOrders)}>
+              <span className="flex items-center gap-3"><ClipboardList className="w-5 h-5 text-[#9f0e4e]" />{L('Suivre ma commande', 'Track my order', 'تتبع طلبي')}</span>
+            </button>
+          )}
           <button type="button" className={row} onClick={run(onOpenFavorites)}>
             <span className="flex items-center gap-3"><Heart className="w-5 h-5 text-[#9f0e4e]" />{L('Mes favoris', 'My favorites', 'مفضلتي')}</span>
             {favoritesCount > 0 && <span className="text-xs font-black text-[#9f0e4e]">{favoritesCount}</span>}
           </button>
-          {customerName ? (
-            <button type="button" className={row} onClick={run(onLogout)}>
-              <span className="flex items-center gap-3"><LogOut className="w-5 h-5 text-slate-500" />{L('Se déconnecter', 'Log out', 'تسجيل الخروج')}</span>
-            </button>
-          ) : (
+          {!customer && (
             <button type="button" className={row} onClick={run(onLogin)}>
-              <span className="flex items-center gap-3"><LogIn className="w-5 h-5 text-[#9f0e4e]" />{L('Connexion / Demander l’accès', 'Log in / Request access', 'تسجيل الدخول / طلب الوصول')}</span>
+              <span className="flex items-center gap-3"><LogIn className="w-5 h-5 text-[#9f0e4e]" />{L('Connexion / Demander l\u2019accès', 'Log in / Request access', 'تسجيل الدخول / طلب الوصول')}</span>
             </button>
           )}
         </div>

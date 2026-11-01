@@ -3545,8 +3545,21 @@ export default function App() {
         onClose={() => setIsMobileMenuOpen(false)}
         lang={currentLang}
         onSelectLanguage={handleSelectLanguage}
-        customerName={currentCustomer?.fullName || null}
-        loyaltyName={loyaltyTier?.name || null}
+        customer={currentCustomer}
+        loyaltyTier={loyaltyTier}
+        nextLoyaltyTier={myInsights?.loyalty?.nextTier || null}
+        loyaltySpendDA={myInsights?.loyalty?.spendDA || 0}
+        loyaltyWindowDays={myInsights?.loyalty?.windowDays || offers.loyalty.windowDays}
+        spendStats={myInsights?.stats || null}
+        pushStatus={pushStatus}
+        marketingPush={marketingPush}
+        onToggleMarketing={(v) => {
+          setMarketingPush(v);
+          if (currentCustomer) savePushPrefs(currentCustomer.id, v);
+        }}
+        onEnablePush={() => {
+          if (currentCustomer) enablePush(currentCustomer.id).then(setPushStatus);
+        }}
         favoritesCount={favorites.length}
         onOpenOrders={() => setIsOrderTrackingOpen(true)}
         onOpenFavorites={() => {

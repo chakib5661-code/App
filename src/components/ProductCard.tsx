@@ -288,7 +288,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
 
           {/* Extrait container size badge */}
           {isExtrait && (
-            <div className="mt-2.5 bg-amber-50/80 border border-amber-200/80 rounded-xl p-2 px-2.5 text-[11px] text-amber-950 flex items-center justify-between max-sm:flex-col max-sm:items-start max-sm:gap-0.5 font-medium">
+            <div className="max-sm:hidden mt-2.5 bg-amber-50/80 border border-amber-200/80 rounded-xl p-2 px-2.5 text-[11px] text-amber-950 flex items-center justify-between font-medium">
               <span>{t.container100g}</span>
               <span className="font-bold text-amber-800">
                 {isPricesVisible ? (
@@ -300,6 +300,19 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
                   </span>
                 )}
               </span>
+            </div>
+          )}
+
+          {/* Phone: one short line instead of the container box */}
+          {isExtrait && (
+            <div className="sm:hidden mt-1 text-[11px] font-bold text-amber-800 flex items-center gap-1">
+              <span>100g</span>
+              <span>·</span>
+              {isPricesVisible ? (
+                <span>{formatDZD((hasDiscount ? discountedPriceDA : product.priceDA) * 100)}</span>
+              ) : (
+                <Lock className="w-3 h-3" aria-label={t.confidentialPriceBadge} />
+              )}
             </div>
           )}
         </div>
@@ -401,7 +414,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
 
           {/* Extrait quick preset buttons */}
           {isExtrait && !isOutOfStock && !isAllInCart && (
-            <div className="flex flex-wrap items-center gap-1.5 mb-2.5 text-xs sm:text-[10px]">
+            <div className="max-sm:hidden flex flex-wrap items-center gap-1.5 mb-2.5 text-xs sm:text-[10px]">
               <span className="max-sm:hidden text-slate-400 font-semibold mr-0.5">Presets :</span>
               {[100, 200, 300, 500].map((presetG) => {
                 if (presetG > availableStock && presetG !== 100) return null;

@@ -192,6 +192,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-1.5 sm:gap-2.5">
           {/* CUSTOMER AUTHENTICATION STATUS */}
           {currentCustomer ? (
+            <div className="max-sm:hidden">
             <AccountMenu
               customer={currentCustomer}
               lang={lang}
@@ -207,6 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
               onToggleMarketing={onToggleMarketing}
               onEnablePush={onEnablePush}
             />
+            </div>
           ) : (
             <div className="flex items-center gap-1.5">
               {onOpenCustomerAuth && (
