@@ -3,15 +3,14 @@ import http from "http";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
-import compression from "compression";
 import * as storeDb from "./storeDb";
 import * as supabaseDb from "./supabaseDb";
 import { put, list } from "@vercel/blob";
+import webpush from "web-push";
 
 dotenv.config();
 
 export const app = express();
-app.use(compression());
 const PORT = Number(process.env.PORT) || 3000;
 
 // Enable CORS for API routes
@@ -66,7 +65,7 @@ app.use((req, res, next) => {
 });
 
 // Serve public static assets (tulip-extrait-default.jpg, tulip-logo.svg, PWA icons, etc.)
-app.use(express.static(path.join(process.cwd(), "public")));
+// (public assets are served by Next.js)
 
 app.use(express.json({ limit: "25mb" }));
 
@@ -231,6 +230,74 @@ if (supabaseDb.isSupabaseConfigured()) {
       res.status(500).json({ error: "Erreur lors de la synchronisation." });
     }
   });
+
+
+// ---- Web Push (add-to-order window) ----
+const pushConfigured = (): boolean =>
+  Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+
+type PushCategory = "order_status" | "cart" | "reorder" | "loyalty";
+
+/** Sends a push if the customer has a subscription and the category/frequency rules allow it. Returns the number of devices reached. */
+async function sendPushToCustomer(
+  customerId: string,
+  category: PushCategory,
+  ref: string | undefined,
+  payload: { title: string; body: string; url?: string; tag?: string }
+): Promise<number> {
+  if (!pushConfigured() || !customerId) return 0;
+  const existing = await storeDb.getPushSubscriptionsFor(customerId);
+  if (existing.length === 0) return 0;
+  const decision = await storeDb.reservePush(customerId, category, ref);
+  if (decision.ok === false) {
+    console.log(`[Push] skipped ${category} for ${customerId}: ${decision.reason}`);
+    return 0;
+  }
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || "mailto:contact@tulip-fragrance.com",
+    process.env.VAPID_PUBLIC_KEY as string,
+    process.env.VAPID_PRIVATE_KEY as string
+  );
+  const subs = await storeDb.getPushSubscriptionsFor(customerId);
+  const dead: string[] = [];
+  let sent = 0;
+  await Promise.all(
+    subs.map(async (s) => {
+      try {
+        await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, JSON.stringify(payload), { TTL: 3600 });
+        sent++;
+      } catch (e: any) {
+        if (e?.statusCode === 404 || e?.statusCode === 410) dead.push(s.endpoint);
+        else console.warn("[Push] send error:", e?.statusCode || e?.message);
+      }
+    })
+  );
+  if (dead.length) await storeDb.removePushSubscriptions(dead);
+  return sent;
+}
+
+const STATUS_PUSH: Record<string, { title: string; body: string }> = {
+  confirmee: { title: "Commande confirmée", body: "Votre commande {n} est confirmée. Nous la préparons." },
+  en_preparation: { title: "Commande en préparation", body: "Votre commande {n} est en cours de préparation." },
+  livree: { title: "Commande livrée", body: "Votre commande {n} est livrée. Merci de votre confiance !" },
+  annulee: { title: "Commande annulée", body: "Votre commande {n} a été annulée. Contactez-nous si besoin." },
+};
+
+async function notifyOrderStatusChange(order: any, oldStatus: string | undefined): Promise<void> {
+  try {
+    if (!order || !order.customerId || order.isProforma || !oldStatus || order.status === oldStatus) return;
+    const msg = STATUS_PUSH[order.status];
+    if (!msg) return;
+    await sendPushToCustomer(order.customerId, "order_status", `${order.id}:${order.status}`, {
+      title: msg.title,
+      body: msg.body.replace("{n}", order.orderNumber),
+      url: "/?track=1",
+      tag: `order-${order.id}`,
+    });
+  } catch (e: any) {
+    console.warn("[Push] status notification error:", e?.message);
+  }
+}
 
 function escapeHtml(str: string = ''): string {
   return String(str)
@@ -529,6 +596,34 @@ async function sendTelegramAccessRequestNotification(applicant: any) {
         console.warn("[Telegram Bot] Notification trigger error:", tgErr?.message);
       }
 
+      // Tell the customer they can still add items while the window is open
+      try {
+        const offers = await storeDb.getOffersAsync();
+        if (!isProforma && order.customerId && offers.addToOrder.enabled && offers.addToOrder.pushEnabled) {
+          const until = new Date(new Date(order.date).getTime() + offers.addToOrder.windowHours * 3600 * 1000);
+          const hh = new Intl.DateTimeFormat("fr-DZ", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Algiers" }).format(until);
+          await sendPushToCustomer(order.customerId, "order_status", `${order.id}:received`, {
+            title: `Commande ${order.orderNumber} reçue`,
+            body: `Vous avez oublié un article ? Ajoutez-le à votre commande jusqu'à ${hh}.`,
+            url: "/?track=1",
+            tag: `order-${order.id}`,
+          });
+        }
+        if (!isProforma && order.customerId) {
+          const t = await storeDb.customerLoyaltyTierId(order.customerId, order.id);
+          if (t.after && t.after !== t.before) {
+            await sendPushToCustomer(order.customerId, "loyalty", `tier:${t.after}`, {
+              title: `Bravo, niveau ${t.name} atteint`,
+              body: t.perk ? `${t.perk}. Merci pour votre fidélité.` : "Merci pour votre fidélité, vos avantages sont actifs.",
+              url: "/",
+              tag: `tier-${t.after}`,
+            });
+          }
+        }
+      } catch (pushErr: any) {
+        console.warn("[Push] order notification error:", pushErr?.message);
+      }
+
       res.status(201).json({
         success: true,
         order,
@@ -536,6 +631,9 @@ async function sendTelegramAccessRequestNotification(applicant: any) {
         telegram: telegramStatus,
       });
     } catch (err: any) {
+      if (err?.code === 'MIN_ORDER') {
+        return res.status(422).json({ success: false, code: 'MIN_ORDER', error: err.message });
+      }
       console.error("[API] POST /api/orders error:", err);
       res.status(500).json({ error: "Erreur lors de l'enregistrement de la commande." });
     }
@@ -560,10 +658,12 @@ async function sendTelegramAccessRequestNotification(applicant: any) {
     try {
       const { id } = req.params;
       const patch = req.body;
+      const oldStatus = (await storeDb.loadDatabaseAsync()).orders.find((o) => o.id === id)?.status;
       const result = await storeDb.updateOrder(id, patch);
       if (!result) {
         return res.status(404).json({ error: "Commande introuvable." });
       }
+      await notifyOrderStatusChange(result.order, oldStatus);
       broadcastServerEvent("order:updated", {
         order: result.order,
         updatedProducts: result.updatedProducts,
@@ -587,10 +687,12 @@ async function sendTelegramAccessRequestNotification(applicant: any) {
         return res.status(400).json({ error: "Le statut est requis." });
       }
 
+      const oldStatus = (await storeDb.loadDatabaseAsync()).orders.find((o) => o.id === id)?.status;
       const result = await storeDb.updateOrderStatus(id, status);
       if (!result) {
         return res.status(404).json({ error: "Commande introuvable." });
       }
+      await notifyOrderStatusChange(result.order, oldStatus);
 
       broadcastServerEvent("order:updated", {
         order: result.order,
@@ -1890,6 +1992,224 @@ app.post("/api/blob/sync-extrait-images", async (req, res) => {
       success: false,
       error: "Erreur lors de la synchronisation des images: " + (err.message || String(err)),
     });
+  }
+});
+
+
+// ---------------- OFFERS, REORDER, ADD-TO-ORDER, CARTS & REMINDERS ----------------
+
+// Public offers configuration + anonymous popularity counts for the storefront
+app.get("/api/offers", async (_req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'public, max-age=15, s-maxage=30, stale-while-revalidate=120');
+    const [offers, popular] = await Promise.all([storeDb.getOffersAsync(), storeDb.getPopularProducts()]);
+    res.json({ success: true, offers, popular });
+  } catch (err: any) {
+    console.error("[API] GET /api/offers error:", err);
+    res.status(500).json({ error: "Impossible de charger les offres." });
+  }
+});
+
+app.put("/api/offers", async (req, res) => {
+  try {
+    const raw = req.body && req.body.offers ? req.body.offers : req.body;
+    if (!raw || typeof raw !== 'object') {
+      return res.status(400).json({ error: "Configuration des offres requise." });
+    }
+    const offers = await storeDb.updateOffers(raw);
+    broadcastServerEvent("offers:updated", { offers });
+    res.json({ success: true, offers });
+  } catch (err: any) {
+    console.error("[API] PUT /api/offers error:", err);
+    res.status(500).json({ error: "Erreur lors de l'enregistrement des offres." });
+  }
+});
+
+// Customer-scoped order history, loyalty status and "usual products"
+app.post("/api/my-orders", async (req, res) => {
+  try {
+    const { customerId, username } = req.body || {};
+    const data = await storeDb.getCustomerInsights(String(customerId || ''), String(username || ''));
+    if (!data) return res.status(404).json({ error: "Compte client introuvable." });
+    res.json({ success: true, ...data });
+  } catch (err: any) {
+    console.error("[API] POST /api/my-orders error:", err);
+    res.status(500).json({ error: "Impossible de récupérer vos commandes." });
+  }
+});
+
+// Add items to a recent order (same delivery, no new order)
+app.post("/api/orders/:id/add-items", async (req, res) => {
+  try {
+    const { customerId, items } = req.body || {};
+    const result = await storeDb.addItemsToOrder(req.params.id, String(customerId || ''), items);
+    if (result.ok === false) return res.status(result.status).json({ success: false, error: result.error });
+    broadcastServerEvent("order:updated", { order: result.order, updatedProducts: result.updatedProducts });
+    try {
+      await broadcastTelegramMessage(
+        `🧾 <b>Commande mise à jour</b> ${escapeHtml(result.order.orderNumber)}\n` +
+          `Client : ${escapeHtml(result.order.customer?.fullName || '')}\n` +
+          `Nouveau total : <b>${Math.round(result.order.totalDA)} DA</b> (articles ajoutés par le client)`,
+        result.order.isProforma ? 'proforma' : 'preorder'
+      );
+    } catch (tgErr: any) {
+      console.warn("[Telegram Bot] add-items notification error:", tgErr?.message);
+    }
+    res.json({ success: true, order: result.order, updatedProducts: result.updatedProducts });
+  } catch (err: any) {
+    console.error("[API] POST /api/orders/:id/add-items error:", err);
+    res.status(500).json({ error: "Erreur lors de l'ajout à la commande." });
+  }
+});
+
+app.get("/api/push/public-key", (_req, res) => {
+  res.json({ enabled: pushConfigured(), publicKey: pushConfigured() ? process.env.VAPID_PUBLIC_KEY : null });
+});
+
+app.get("/api/push/prefs", async (req, res) => {
+  try {
+    res.json({ success: true, prefs: await storeDb.getPushPrefs(String(req.query.customerId || "")) });
+  } catch {
+    res.status(500).json({ error: "Erreur." });
+  }
+});
+
+app.post("/api/push/prefs", async (req, res) => {
+  try {
+    const { customerId, marketing } = req.body || {};
+    if (!customerId) return res.status(400).json({ error: "Client requis." });
+    await storeDb.setPushPrefs(String(customerId), { marketing: Boolean(marketing) });
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: "Erreur." });
+  }
+});
+
+app.post("/api/push/subscribe", async (req, res) => {
+  try {
+    const { customerId, subscription } = req.body || {};
+    if (!customerId || !subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+      return res.status(400).json({ error: "Abonnement invalide." });
+    }
+    await storeDb.savePushSubscription({
+      customerId: String(customerId),
+      endpoint: String(subscription.endpoint),
+      keys: { p256dh: String(subscription.keys.p256dh), auth: String(subscription.keys.auth) },
+      createdAt: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[API] POST /api/push/subscribe error:", err);
+    res.status(500).json({ error: "Erreur lors de l'abonnement." });
+  }
+});
+
+// Server-side copy of a logged-in customer's cart, used for abandoned-cart follow-up by staff
+app.post("/api/carts", async (req, res) => {
+  try {
+    const { customerId, customerName, companyName, phone, items, totalDA } = req.body || {};
+    if (!customerId) return res.status(400).json({ error: "Client requis." });
+    const list = Array.isArray(items) ? items.filter((i: any) => i && i.productId && Number(i.quantity) > 0) : [];
+    await storeDb.upsertCart(
+      list.length
+        ? {
+            customerId: String(customerId),
+            customerName: String(customerName || ''),
+            companyName: companyName ? String(companyName) : undefined,
+            phone: phone ? String(phone) : undefined,
+            items: list.map((i: any) => ({ productId: String(i.productId), name: String(i.name || ''), quantity: Number(i.quantity) })),
+            totalDA: Number(totalDA) || 0,
+            updatedAt: new Date().toISOString(),
+          }
+        : null,
+      String(customerId)
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[API] POST /api/carts error:", err);
+    res.status(500).json({ error: "Erreur lors de l'enregistrement du panier." });
+  }
+});
+
+function waLink(phone?: string): string {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return '';
+  const intl = digits.startsWith('213') ? digits : digits.startsWith('0') ? `213${digits.slice(1)}` : digits;
+  return `https://wa.me/${intl}`;
+}
+
+app.get("/api/reminders/due", async (_req, res) => {
+  try {
+    const due = await storeDb.getDueReminders();
+    res.json({
+      success: true,
+      carts: due.carts.map((c) => ({ ...c, whatsapp: waLink(c.phone) })),
+      reorders: due.reorders.map((r) => ({ ...r, whatsapp: waLink(r.phone) })),
+    });
+  } catch (err: any) {
+    console.error("[API] GET /api/reminders/due error:", err);
+    res.status(500).json({ error: "Impossible de calculer les relances." });
+  }
+});
+
+// Daily job (Vercel Cron): sends ONE Telegram summary to the sales team. Protected by CRON_SECRET when set.
+app.all("/api/reminders/run", async (req, res) => {
+  try {
+    const secret = process.env.CRON_SECRET;
+    if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+      return res.status(401).json({ error: "Non autorisé." });
+    }
+    const due = await storeDb.getDueReminders();
+    if (due.carts.length === 0 && due.reorders.length === 0) {
+      return res.json({ success: true, sent: false, carts: 0, reorders: 0, pushed: 0 });
+    }
+
+    // Customer web push first (frequency rules are enforced inside sendPushToCustomer)
+    let pushed = 0;
+    const offersNow = await storeDb.getOffersAsync();
+    const fmt = (n: number) => `${Math.round(n).toLocaleString("fr-FR").replace(/\u202f|\u00a0/g, " ")} DA`;
+    for (const c of due.carts) {
+      const missing = offersNow.rewardLadder.enabled
+        ? offersNow.rewardLadder.tiers.map((t) => t.thresholdDA).sort((a, b) => a - b).find((t) => t > c.totalDA)
+        : undefined;
+      const nudge = missing && missing - c.totalDA <= c.totalDA * 0.3 ? ` Plus que ${fmt(missing - c.totalDA)} pour le prochain avantage.` : "";
+      pushed += await sendPushToCustomer(c.customerId, "cart", c.updatedAt, {
+        title: "Votre panier vous attend",
+        body: `Votre panier de ${fmt(c.totalDA)} n'est pas finalisé.${nudge}`,
+        url: "/?cart=1",
+        tag: "cart",
+      });
+    }
+    for (const r of due.reorders) {
+      pushed += await sendPushToCustomer(r.customerId, "reorder", r.lastOrderDate, {
+        title: "Il est temps de réapprovisionner ?",
+        body: `Votre dernière commande date de ${r.daysSince} jours. Recommandez la même en un clic.`,
+        url: "/?reorder=1",
+        tag: "reorder",
+      });
+    }
+    const lines: string[] = ['📣 <b>Relances à faire aujourd\'hui</b>'];
+    if (due.carts.length) {
+      lines.push('', '🛒 <b>Paniers non finalisés</b>');
+      due.carts.slice(0, 15).forEach((c) => {
+        const who = escapeHtml(c.companyName || c.customerName);
+        lines.push(`• ${who} — ${Math.round(c.totalDA)} DA (${c.items.length} réf.) ${waLink(c.phone)}`);
+      });
+    }
+    if (due.reorders.length) {
+      lines.push('', '🔁 <b>Clients à relancer pour un réassort</b>');
+      due.reorders.slice(0, 15).forEach((r) => {
+        lines.push(`• ${escapeHtml(r.companyName || r.fullName)} — dernière commande il y a ${r.daysSince} j ${waLink(r.phone)}`);
+      });
+    }
+    const result: any = await broadcastTelegramMessage(lines.join('\n'), 'general');
+    if (result && result.sentViaBot !== false) {
+      await storeDb.markCartsReminded(due.carts.map((c) => c.customerId));
+    }
+    res.json({ success: true, sent: Boolean(result?.sentViaBot), carts: due.carts.length, reorders: due.reorders.length, pushed });
+  } catch (err: any) {
+    console.error("[API] /api/reminders/run error:", err);
+    res.status(500).json({ error: "Erreur lors des relances." });
   }
 });
 

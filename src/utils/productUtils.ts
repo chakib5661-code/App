@@ -37,3 +37,15 @@ export function calculateDiscountedPrice(price: number, discountPercent?: number
   const discounted = price * (1 - discountPercent / 100);
   return Math.round(discounted * 100) / 100;
 }
+
+export type GenderKey = 'men' | 'women' | 'unisex';
+
+/** Maps free-text gender values (FR/EN/AR) to one of three filter keys; null when unknown. */
+export function normalizeGender(raw?: string | null): GenderKey | null {
+  const g = (raw || '').trim().toLowerCase();
+  if (!g) return null;
+  if (/(unisex|mixte|uni\b|مختلط|للجنسين)/.test(g)) return 'unisex';
+  if (/(women|woman|femme|female|pour elle|لها|نساء|نسائي)/.test(g)) return 'women';
+  if (/(men|man|homme|male|pour lui|له|رجال|رجالي)/.test(g)) return 'men';
+  return null;
+}

@@ -1,27 +1,20 @@
 {
-  "name": "react-example",
+  "name": "tulip-nextjs",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/server/vercelEntry.ts --bundle --platform=node --format=esm --packages=external --sourcemap --outfile=api/index.js",
-    "start": "node dist/server.cjs",
-    "clean": "rm -rf dist server.js",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
-    "@tailwindcss/vite": "^4.1.14",
     "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.8.0",
     "@vercel/speed-insights": "^2.0.0",
-    "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
-    "compression": "^1.8.2",
     "dotenv": "^17.2.3",
-    "esbuild": "^0.25.0",
-    "express": "^4.21.2",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
@@ -29,8 +22,11 @@
     "react-dom": "^19.0.1",
     "sharp": "^0.35.4",
     "tailwindcss": "^4.1.14",
-    "vite": "^6.2.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "express": "^4.21.2",
+    "next": "^15.5.0",
+    "@tailwindcss/postcss": "^4.1.14",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",
@@ -38,7 +34,7 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "tsx": "^4.21.0",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "@types/web-push": "^3.6.4"
   }
 }

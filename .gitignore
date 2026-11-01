@@ -1,8 +1,7 @@
-node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
-!.env.example
+node_modules
+.next
+next-env.d.ts
+tsconfig.tsbuildinfo
+/data
+.env
+.env.local

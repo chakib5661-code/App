@@ -15,7 +15,8 @@ import {
   User,
   WifiOff,
 } from 'lucide-react';
-import { ProductFamily, StoreSettings, CustomerUser } from '../types';
+import { ProductFamily, StoreSettings, CustomerUser, LoyaltyTier } from '../types';
+import { AccountMenu, PushStatus } from './AccountMenu';
 import { INITIAL_STORE_SETTINGS } from '../data/initialProducts';
 import { formatDZD } from '../utils/formatDZD';
 import { TulipLogo } from './TulipLogo';
@@ -47,6 +48,15 @@ interface HeaderProps {
   onOpenInterfaceChoiceModal?: () => void;
   isOnline?: boolean;
   cachedImagesCount?: number;
+  loyaltyTier?: LoyaltyTier | null;
+  nextLoyaltyTier?: LoyaltyTier | null;
+  loyaltySpendDA?: number;
+  spendStats?: { totalSpendDA: number; ordersCount: number; since: string | null } | null;
+  loyaltyWindowDays?: number;
+  pushStatus?: PushStatus;
+  marketingPush?: boolean;
+  onToggleMarketing?: (value: boolean) => void;
+  onEnablePush?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -71,6 +81,15 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleInterface,
   isOnline = true,
   cachedImagesCount = 0,
+  loyaltyTier = null,
+  nextLoyaltyTier = null,
+  loyaltySpendDA = 0,
+  spendStats = null,
+  loyaltyWindowDays = 90,
+  pushStatus = 'unsupported',
+  marketingPush = true,
+  onToggleMarketing,
+  onEnablePush,
 }) => {
   const t = translations[lang];
   const isRtl = false; // Layout stays LTR for accessibility and right-handed reachability
@@ -95,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-rose-100/90 text-slate-800 shadow-xs transition-all" dir={isRtl ? 'rtl' : 'ltr'}>
+    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-rose-100/90 text-slate-800 shadow-xs transition-all" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Offline Status Bar */}
       {!isOnline && (
         <div className="bg-gradient-to-r from-[#70083b] to-[#9f0e4e] text-white px-3 py-1.5 text-xs font-bold flex items-center justify-center gap-2 border-b border-[#5a052e] shadow-xs">
@@ -173,22 +192,21 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-1.5 sm:gap-2.5">
           {/* CUSTOMER AUTHENTICATION STATUS */}
           {currentCustomer ? (
-            <div className="flex items-center gap-1.5 sm:gap-2 bg-pink-50 border border-pink-200/90 px-2 sm:px-3 py-1.5 rounded-xl text-xs">
-              <User className="w-3.5 h-3.5 text-[#9f0e4e] shrink-0" />
-              <span className="hidden sm:inline text-[#70083b] font-bold max-w-[100px] sm:max-w-[140px] truncate">
-                {currentCustomer.username}
-              </span>
-              {onLogoutCustomer && (
-                <button
-                  type="button"
-                  onClick={onLogoutCustomer}
-                  className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-pink-100/60 transition cursor-pointer"
-                  title={t.logoutBtn}
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+            <AccountMenu
+              customer={currentCustomer}
+              lang={lang}
+              loyaltyTier={loyaltyTier}
+              nextTier={nextLoyaltyTier}
+              spendDA={loyaltySpendDA}
+              spendStats={spendStats}
+              windowDays={loyaltyWindowDays}
+              onOpenOrderTracking={onOpenOrderTracking}
+              onLogout={onLogoutCustomer}
+              pushStatus={pushStatus}
+              marketingPush={marketingPush}
+              onToggleMarketing={onToggleMarketing}
+              onEnablePush={onEnablePush}
+            />
           ) : (
             <div className="flex items-center gap-1.5">
               {onOpenCustomerAuth && (
@@ -196,7 +214,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenCustomerAuth('login')}
-                    className="relative px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:from-[#880e4f] hover:to-[#be185d] text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md hover:scale-105 active:scale-95 ring-2 ring-rose-400/60 sm:ring-pink-500/30 shrink-0"
+                    className="relative px-4 sm:px-3.5 py-3 sm:py-2 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:from-[#880e4f] hover:to-[#be185d] text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md hover:scale-105 active:scale-95 ring-2 ring-rose-400/60 sm:ring-pink-500/30 shrink-0"
                     title={t.loginBtn}
                   >
                     {/* Glowing notice indicator dot on mobile */}
@@ -253,26 +271,12 @@ export const Header: React.FC<HeaderProps> = ({
             </>
           )}
 
-          {/* ORDER TRACKING BUTTON (Strictly hidden for non logged-in users) */}
-          {Boolean(currentCustomer && onOpenOrderTracking) && (
-            <button
-              id="btn-header-track-order"
-              type="button"
-              onClick={onOpenOrderTracking}
-              className="px-2.5 sm:px-3 py-2 rounded-xl bg-white hover:bg-rose-50 text-slate-700 hover:text-[#880e4f] border border-rose-200/90 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-              title={t.trackOrderBtn}
-            >
-              <Truck className="w-4 h-4 text-[#9f0e4e]" />
-              <span className="hidden sm:inline">{t.trackOrderBtn}</span>
-            </button>
-          )}
-
           {/* Cart / Pre-Order Button */}
           <button
             id="btn-open-cart"
             type="button"
             onClick={onOpenCart}
-            className="relative px-3 sm:px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 text-white font-black text-xs flex items-center gap-1.5 sm:gap-2 transition shadow-md active:scale-95 cursor-pointer"
+            className="max-sm:hidden relative px-3 sm:px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 text-white font-black text-xs flex items-center gap-1.5 sm:gap-2 transition shadow-md active:scale-95 cursor-pointer"
             title={t.cartBtn}
           >
             <ShoppingBag className="w-4 h-4" />
@@ -298,7 +302,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* DEDICATED SUB-HEADER BAR: SWITCH MODE CENTERED */}
       {onToggleInterface && (
         <div
-          className={`bg-gradient-to-r from-[#fdf8fa] via-[#faf0f4] to-[#fbf7f9] border-t border-rose-100/90 flex items-center justify-center relative transition-all duration-300 overflow-hidden ${
+          className={`max-sm:hidden bg-gradient-to-r from-[#fdf8fa] via-[#faf0f4] to-[#fbf7f9] border-t border-rose-100/90 flex items-center justify-center relative transition-all duration-300 overflow-hidden ${
             isScrolledDown ? 'max-h-0 py-0 opacity-0 border-transparent pointer-events-none' : 'max-h-16 py-2 opacity-100'
           }`}
         >
