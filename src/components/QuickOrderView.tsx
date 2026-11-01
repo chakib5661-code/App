@@ -462,6 +462,31 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                           <Lock className="w-3 h-3 inline ml-1.5 text-amber-600" />
                         )}
                       </div>
+                      {(() => {
+                        const lowAt = product.lowStockThreshold || product.minAlertStock || 5;
+                        const isLow = product.stock > 0 && product.stock <= lowAt;
+                        const hasSale = Boolean(product.discountPercent && product.discountPercent > 0);
+                        if (!product.unit && !hasSale && !isLow) return null;
+                        return (
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-[11px] text-slate-500">
+                            {product.unit && <span>{isExtrait ? '1g · 100g' : product.unit}</span>}
+                            {hasSale && (
+                              <span className="px-1.5 py-px rounded-full bg-rose-600 text-white font-black">
+                                -{product.discountPercent}%
+                              </span>
+                            )}
+                            {isLow && (
+                              <span className="text-rose-700 font-bold">
+                                {lang === 'ar'
+                                  ? `بقي ${product.stock}${isExtrait ? ' غ' : ''} فقط`
+                                  : lang === 'en'
+                                  ? `Only ${product.stock}${isExtrait ? ' g' : ''} left`
+                                  : `Plus que ${product.stock}${isExtrait ? ' g' : ''}`}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {isOutOfStock ? (
