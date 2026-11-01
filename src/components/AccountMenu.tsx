@@ -19,6 +19,10 @@ interface AccountMenuProps {
   onEnablePush?: () => void;
   marketingPush?: boolean;
   onToggleMarketing?: (value: boolean) => void;
+  /** Render the menu body in place (no button, always open), e.g. inside the phone Menu sheet */
+  inline?: boolean;
+  /** Called after an action in inline mode so the host sheet can close */
+  onAfterAction?: () => void;
 }
 
 /** Account button (icon + name + loyalty badge). Track order, notifications and logout live in its menu. */
@@ -36,13 +40,16 @@ export const AccountMenu: React.FC<AccountMenuProps> = ({
   onEnablePush,
   marketingPush = true,
   onToggleMarketing,
+  inline = false,
+  onAfterAction,
 }) => {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpen] = useState(false);
+  const open = inline || openState;
   const ref = useRef<HTMLDivElement>(null);
   const tr = (ar: string, fr: string) => (lang === 'ar' ? ar : fr);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || inline) return;
     const onDown = (e: MouseEvent | TouchEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
@@ -63,6 +70,7 @@ export const AccountMenu: React.FC<AccountMenuProps> = ({
 
   return (
     <div className="relative" ref={ref}>
+      {!inline && (
       <button
         type="button"
         id="btn-account-menu"
@@ -84,11 +92,16 @@ export const AccountMenu: React.FC<AccountMenuProps> = ({
         )}
         <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
+      )}
 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-24px)] bg-white rounded-2xl border border-rose-200 shadow-2xl z-50 overflow-hidden"
+          className={
+            inline
+              ? 'bg-white rounded-2xl border border-rose-200 overflow-hidden'
+              : 'absolute right-0 mt-2 w-72 max-w-[calc(100vw-24px)] bg-white rounded-2xl border border-rose-200 shadow-2xl z-50 overflow-hidden'
+          }
         >
           <div className="px-4 py-3 bg-gradient-to-r from-[#500428] to-[#9f0e4e] text-white">
             <div className="flex items-center gap-2 min-w-0">
@@ -151,6 +164,7 @@ export const AccountMenu: React.FC<AccountMenuProps> = ({
                 className={item}
                 onClick={() => {
                   setOpen(false);
+                  onAfterAction?.();
                   onOpenOrderTracking();
                 }}
               >
@@ -199,6 +213,7 @@ export const AccountMenu: React.FC<AccountMenuProps> = ({
                 className={`${item} text-rose-700 border-t border-rose-100`}
                 onClick={() => {
                   setOpen(false);
+                  onAfterAction?.();
                   onLogout();
                 }}
               >

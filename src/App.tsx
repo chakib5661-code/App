@@ -42,6 +42,9 @@ import { QuickOrderView } from './components/QuickOrderView';
 import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
 import { ClearanceBanner } from './components/ClearanceBanner';
+import { ManageFavoritesModal } from './components/ManageFavoritesModal';
+import { MyInvoicesModal } from './components/MyInvoicesModal';
+import { MobileMenuSheet } from './components/MobileMenuSheet';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppLanguage } from './translations';
 import { formatDZD } from './utils/formatDZD';
@@ -486,6 +489,8 @@ export default function App() {
 
   const [isInterfaceChoiceOpen, setIsInterfaceChoiceOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isInvoicesOpen, setIsInvoicesOpen] = useState(false);
 
   const handleConfirmLanguageSelection = (lang: AppLanguage) => {
     handleSelectLanguage(lang);
@@ -508,6 +513,7 @@ export default function App() {
   });
 
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
+  const [isManageFavoritesOpen, setIsManageFavoritesOpen] = useState(false);
   const [genderFilter, setGenderFilter] = useState<GenderKey | 'all'>('all');
   const [brandFilter, setBrandFilter] = useState<string[]>([]);
   const [showOnlyClearance, setShowOnlyClearance] = useState(false);
@@ -2701,6 +2707,18 @@ export default function App() {
   };
 
   // IF ADMIN VIEW: RENDER FULL ADMIN PORTAL PAGE
+  // Customer's own invoices, newest first (cancelled orders excluded)
+  const myInvoices = currentCustomer
+    ? (myInsights ? myInsights.orders : orders)
+        .filter((o) => o.customerId === currentCustomer.id || o.customerUsername === currentCustomer.username)
+        .filter((o) => o.status !== 'annulee')
+        .sort((a, b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime())
+    : [];
+  const handleDownloadInvoice = async (order: PreOrder) => {
+    const { downloadOrderPDF } = await import('./utils/pdfGenerator');
+    await downloadOrderPDF(order, storeSettings, { hidePrices: !isPricesVisible });
+  };
+
   if (currentView === 'admin') {
     return (
       <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white font-bold text-sm">Chargement de l'administration Tulip...</div>}>
@@ -2798,6 +2816,11 @@ export default function App() {
         onEnablePush={() => {
           if (currentCustomer) enablePush(currentCustomer.id).then(setPushStatus);
         }}
+        favoritesCount={favorites.length}
+        onOpenFavorites={() => setIsManageFavoritesOpen(true)}
+        invoices={myInvoices}
+        onDownloadInvoice={handleDownloadInvoice}
+        onOpenAllInvoices={() => setIsInvoicesOpen(true)}
         currentInterface={currentInterface}
         onToggleInterface={handleSelectInterface}
         onOpenInterfaceChoiceModal={() => setIsInterfaceChoiceOpen(true)}
@@ -3156,6 +3179,7 @@ export default function App() {
           favoritesCount={favorites.length}
           showOnlyFavorites={showOnlyFavorites}
           onToggleOnlyFavorites={() => setShowOnlyFavorites((prev) => !prev)}
+          onManageFavorites={() => setIsManageFavoritesOpen(true)}
           showOnlyTopSellers={showOnlyTopSellers}
           onToggleOnlyTopSellers={() => setShowOnlyTopSellers((prev) => !prev)}
           topSellersCount={topSellersCount}
@@ -3525,18 +3549,68 @@ export default function App() {
         cartCount={cart.length}
         favoritesCount={favorites.length}
         savedActive={showOnlyFavorites}
-        onOpenSaved={() => {
-          if ((pendingInterface || currentInterface) !== 'showroom') handleSelectInterface('showroom');
-          setShowOnlyFavorites((v) => !v);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-        onOpenOrders={() => setIsOrderTrackingOpen(true)}
+        onOpenSaved={() => setIsManageFavoritesOpen(true)}
+        onOpenMenu={() => setIsMobileMenuOpen(true)}
         cartTotalDA={cartTotalDA}
         isPricesVisible={isPricesVisible}
         onOpenCart={() => setIsCartOpen(true)}
         lang={currentLang}
       />
       <div className="h-20 sm:hidden shrink-0" aria-hidden="true" />
+
+      <ManageFavoritesModal
+        isOpen={isManageFavoritesOpen}
+        onClose={() => setIsManageFavoritesOpen(false)}
+        products={products}
+        favorites={favorites}
+        onRemoveFavorite={handleToggleFavorite}
+        onClearFavorites={() => setFavorites([])}
+        onAddToCart={handleAddToCart}
+        isPricesVisible={isPricesVisible}
+        lang={currentLang}
+      />
+
+      <MobileMenuSheet
+        open={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        lang={currentLang}
+        onSelectLanguage={handleSelectLanguage}
+        customer={currentCustomer}
+        loyaltyTier={loyaltyTier}
+        nextLoyaltyTier={myInsights?.loyalty?.nextTier || null}
+        loyaltySpendDA={myInsights?.loyalty?.spendDA || 0}
+        loyaltyWindowDays={myInsights?.loyalty?.windowDays || offers.loyalty.windowDays}
+        spendStats={myInsights?.stats || null}
+        pushStatus={pushStatus}
+        marketingPush={marketingPush}
+        onToggleMarketing={(v) => {
+          setMarketingPush(v);
+          if (currentCustomer) savePushPrefs(currentCustomer.id, v);
+        }}
+        onEnablePush={() => {
+          if (currentCustomer) enablePush(currentCustomer.id).then(setPushStatus);
+        }}
+        favoritesCount={favorites.length}
+        onOpenOrders={() => setIsOrderTrackingOpen(true)}
+        onOpenFavorites={() => {
+          setIsMobileMenuOpen(false);
+          setIsManageFavoritesOpen(true);
+        }}
+        onOpenInvoices={() => setIsInvoicesOpen(true)}
+        onLogin={handleRequireLogin}
+        onLogout={handleLogoutCustomer}
+      />
+
+      {currentCustomer && (
+        <MyInvoicesModal
+          isOpen={isInvoicesOpen}
+          onClose={() => setIsInvoicesOpen(false)}
+          orders={myInvoices}
+          storeSettings={storeSettings}
+          isPricesVisible={isPricesVisible}
+          lang={currentLang}
+        />
+      )}
 
       {/* Unified Sticky Bottom Order Bar across both Showroom and Quick Order interfaces */}
       <StickyBottomOrderBar

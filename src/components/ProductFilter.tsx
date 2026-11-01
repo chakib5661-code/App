@@ -25,6 +25,7 @@ interface ProductFilterProps {
   favoritesCount?: number;
   showOnlyFavorites?: boolean;
   onToggleOnlyFavorites?: () => void;
+  onManageFavorites?: () => void;
   showOnlyTopSellers?: boolean;
   onToggleOnlyTopSellers?: () => void;
   topSellersCount?: number;
@@ -62,6 +63,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
   favoritesCount = 0,
   showOnlyFavorites = false,
   onToggleOnlyFavorites,
+  onManageFavorites,
   showOnlyTopSellers = false,
   onToggleOnlyTopSellers,
   topSellersCount = 0,
@@ -424,6 +426,16 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
             <Heart className={`w-3.5 h-3.5 ${showOnlyFavorites ? 'fill-white' : 'fill-rose-500 text-rose-500'}`} />
             <span>{t.favorites}</span>
             {favoritesCount > 0 && <span className="text-[10px] opacity-80">({favoritesCount})</span>}
+          </button>
+        )}
+
+        {onManageFavorites && favoritesCount > 0 && (
+          <button
+            type="button"
+            onClick={onManageFavorites}
+            className={`${tabBase} bg-white text-rose-800 hover:bg-rose-50 border border-rose-200`}
+          >
+            <span>{lang === 'ar' ? 'إدارة المفضلة' : 'Gérer favoris'}</span>
           </button>
         )}
 
