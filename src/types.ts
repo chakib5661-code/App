@@ -21,6 +21,7 @@ export interface Product {
   arabicName?: string;
   gender?: string;
   brand?: string; // Brand name, used by the brand filter
+  style?: string; // Designer | Niche | Arabic | Own brand | Non-perfume (set by the tags import)
   capacityMl?: string | number;
   lowStockThreshold?: number;
   tierPrices?: VolumeTier[]; // Volume price breaks (qty in grams for Extrait, units otherwise)
@@ -176,6 +177,8 @@ export interface CustomerUser {
   status: CustomerAccountStatus;
   createdAt?: string;
   lastLogin?: string;
+  /** Product ids the customer saved as favorites (synced across devices). */
+  favorites?: string[];
 }
 
 export interface AdBanner {

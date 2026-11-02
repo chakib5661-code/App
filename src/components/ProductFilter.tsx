@@ -25,6 +25,7 @@ interface ProductFilterProps {
   favoritesCount?: number;
   showOnlyFavorites?: boolean;
   onToggleOnlyFavorites?: () => void;
+  onManageFavorites?: () => void;
   showOnlyTopSellers?: boolean;
   onToggleOnlyTopSellers?: () => void;
   topSellersCount?: number;
@@ -62,6 +63,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
   favoritesCount = 0,
   showOnlyFavorites = false,
   onToggleOnlyFavorites,
+  onManageFavorites,
   showOnlyTopSellers = false,
   onToggleOnlyTopSellers,
   topSellersCount = 0,
@@ -315,7 +317,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
 
   return (
     <div
-      className="sm:sticky sm:top-[58px] z-20 bg-white/95 backdrop-blur-md rounded-2xl p-3 sm:p-4 shadow-2xs border border-rose-100 mb-3 sm:mb-6 space-y-2.5 sm:space-y-3 transition-all"
+      className="bg-white/95 backdrop-blur-md rounded-2xl p-3 sm:p-4 shadow-2xs border border-rose-100 mb-3 sm:mb-6 space-y-2.5 sm:space-y-3 transition-all"
       dir="ltr"
     >
       {/* Search + Filters button */}
@@ -380,6 +382,21 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
         </div>
       )}
 
+      {/* Desktop: all brands on their own rows */}
+      {hasBrands && (
+        <div className="hidden sm:flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+          {brandOptions.map((b) => {
+            const on = selectedBrands.includes(b.name);
+            return (
+              <button key={b.name} type="button" onClick={() => onToggleBrand?.(b.name)} className={chip(on)}>
+                {b.name}
+                <span className="opacity-70"> ({b.count})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Family tabs + quick toggles (scroll sideways on phones) */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1">
         {familyTabs.map((f) => {
@@ -424,6 +441,16 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
             <Heart className={`w-3.5 h-3.5 ${showOnlyFavorites ? 'fill-white' : 'fill-rose-500 text-rose-500'}`} />
             <span>{t.favorites}</span>
             {favoritesCount > 0 && <span className="text-[10px] opacity-80">({favoritesCount})</span>}
+          </button>
+        )}
+
+        {onManageFavorites && favoritesCount > 0 && (
+          <button
+            type="button"
+            onClick={onManageFavorites}
+            className={`${tabBase} bg-white text-rose-800 hover:bg-rose-50 border border-rose-200`}
+          >
+            <span>{lang === 'ar' ? 'إدارة المفضلة' : 'Gérer favoris'}</span>
           </button>
         )}
 

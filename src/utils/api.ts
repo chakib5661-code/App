@@ -1139,3 +1139,25 @@ export async function fetchDueReminders(): Promise<DueRemindersResponse | null> 
     return null;
   }
 }
+
+export async function fetchMyFavorites(customerId: string): Promise<string[] | null> {
+  try {
+    const res = await fetch(`/api/my-favorites?customerId=${encodeURIComponent(customerId)}`);
+    const json = await res.json();
+    return res.ok && json.success && Array.isArray(json.favorites) ? json.favorites : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveMyFavorites(customerId: string, favorites: string[]): Promise<void> {
+  try {
+    await fetch('/api/my-favorites', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, favorites }),
+    });
+  } catch {
+    /* stays in local storage; synced on the next change or login */
+  }
+}

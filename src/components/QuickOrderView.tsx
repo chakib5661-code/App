@@ -21,7 +21,8 @@ import { getUnitPrice, volumeNudge } from '../utils/offers';
 import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
-import { isProductTopSeller, calculateDiscountedPrice } from '../utils/productUtils';
+import { isProductTopSeller, calculateDiscountedPrice, normalizeGender, type GenderKey } from '../utils/productUtils';
+import { BrandGenderFilters } from './BrandGenderFilters';
 
 interface QuickOrderViewProps {
   products: Product[];
@@ -41,6 +42,16 @@ interface QuickOrderViewProps {
   onToggleFavorite?: (productId: string) => void;
   isLoading?: boolean;
   offers?: OffersConfig | null;
+  // Gender / brand / sale filters (shared with the catalogue)
+  genderFilter?: GenderKey | 'all';
+  onSelectGender?: (g: GenderKey | 'all') => void;
+  genderCounts?: { men: number; women: number; unisex: number };
+  brandOptions?: { name: string; count: number }[];
+  selectedBrands?: string[];
+  onToggleBrand?: (brand: string) => void;
+  showOnlyClearance?: boolean;
+  onToggleOnlyClearance?: () => void;
+  clearanceCount?: number;
 }
 
 export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
@@ -60,6 +71,15 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
   onToggleFavorite,
   offers = null,
   isLoading = false,
+  genderFilter = 'all',
+  onSelectGender,
+  genderCounts = { men: 0, women: 0, unisex: 0 },
+  brandOptions = [],
+  selectedBrands = [],
+  onToggleBrand,
+  showOnlyClearance = false,
+  onToggleOnlyClearance,
+  clearanceCount = 0,
 }) => {
   const t = translations[lang];
   const isRtl = false; // Layout stays LTR for accessibility and right-handed reachability
@@ -87,7 +107,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       }
     }, 120);
     return () => clearTimeout(timeout);
-  }, [search, activeFamily, inStockOnly, favoritesOnly, topSellersOnly]);
+  }, [search, activeFamily, inStockOnly, favoritesOnly, topSellersOnly, genderFilter, selectedBrands, showOnlyClearance]);
 
   const topSellersCount = useMemo(() => products.filter(isProductTopSeller).length, [products]);
   const handleSelectFamily = (fam: ProductFamily | 'all') => {
@@ -118,6 +138,12 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       if (topSellersOnly && !isProductTopSeller(p)) return false;
       if (activeFamily !== 'all' && p.family !== activeFamily) return false;
       if (inStockOnly && p.stock <= 0) return false;
+      if (genderFilter !== 'all') {
+        const g = normalizeGender(p.gender);
+        if (g !== genderFilter && !(g === 'unisex' && genderFilter !== 'unisex')) return false;
+      }
+      if (selectedBrands.length > 0 && !selectedBrands.includes((p.brand || '').trim())) return false;
+      if (showOnlyClearance && !(p.clearance || (p.discountPercent || 0) > 0)) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
         const localized = getProductLocalizedDetails(p, lang);
@@ -128,7 +154,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       }
       return true;
     });
-  }, [products, activeFamily, inStockOnly, search, lang, favoritesOnly, favorites, topSellersOnly]);
+  }, [products, activeFamily, inStockOnly, search, lang, favoritesOnly, favorites, topSellersOnly, genderFilter, selectedBrands, showOnlyClearance]);
 
   // Render one layout (phone cards or desktop table) and only a first slice of rows; more load as the user scrolls
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
@@ -223,8 +249,8 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
     <div className="min-h-screen bg-[#faf7f9] py-4 sm:py-6 pb-28" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
         {/* Filter Controls Bar */}
-        <div className="max-sm:contents sm:sticky sm:top-[58px] z-20 bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 shadow-2xs border border-rose-100 mb-4 sm:mb-6 space-y-3 transition-all">
-          <div className="max-sm:contents flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div className="max-sm:contents bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 shadow-2xs border border-rose-100 mb-4 sm:mb-6 space-y-3 transition-all">
+          <div className="max-sm:contents flex flex-col sm:flex-row sm:flex-wrap gap-3 items-center sm:items-start">
             {/* Search Input */}
             <div className="relative w-full sm:max-w-md max-sm:mb-2">
               <Search className={`w-4 h-4 text-rose-400 absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2`} />
@@ -246,8 +272,26 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
               )}
             </div>
 
+            {onSelectGender && onToggleBrand && onToggleOnlyClearance && (
+              <div className="w-full sm:contents max-sm:mb-2">
+                <BrandGenderFilters
+                  lang={lang}
+                  genderFilter={genderFilter}
+                  onSelectGender={onSelectGender}
+                  genderCounts={genderCounts}
+                  brandOptions={brandOptions}
+                  selectedBrands={selectedBrands}
+                  onToggleBrand={onToggleBrand}
+                  showOnlyClearance={showOnlyClearance}
+                  onToggleOnlyClearance={onToggleOnlyClearance}
+                  clearanceCount={clearanceCount}
+                  resultCount={filteredProducts.length}
+                />
+              </div>
+            )}
+
             {/* Family Tabs */}
-            <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 max-sm:sticky max-sm:top-[65px] max-sm:z-20 max-sm:bg-[#faf7f9] max-sm:py-2 max-sm:-mx-3 max-sm:px-3 max-sm:w-[calc(100%+1.5rem)] max-sm:border-b max-sm:border-rose-100 max-sm:mb-2">
+            <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 max-sm:py-2 max-sm:-mx-3 max-sm:px-3 max-sm:w-[calc(100%+1.5rem)] max-sm:border-b max-sm:border-rose-100 max-sm:mb-2">
               <button
                 type="button"
                 onClick={() => handleSelectFamily('all')}
@@ -462,6 +506,31 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                           <Lock className="w-3 h-3 inline ml-1.5 text-amber-600" />
                         )}
                       </div>
+                      {(() => {
+                        const lowAt = product.lowStockThreshold || product.minAlertStock || 5;
+                        const isLow = product.stock > 0 && product.stock <= lowAt;
+                        const hasSale = Boolean(product.discountPercent && product.discountPercent > 0);
+                        if (!product.unit && !hasSale && !isLow) return null;
+                        return (
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-[11px] text-slate-500">
+                            {product.unit && <span>{isExtrait ? '1g · 100g' : product.unit}</span>}
+                            {hasSale && (
+                              <span className="px-1.5 py-px rounded-full bg-rose-600 text-white font-black">
+                                -{product.discountPercent}%
+                              </span>
+                            )}
+                            {isLow && (
+                              <span className="text-rose-700 font-bold">
+                                {lang === 'ar'
+                                  ? `بقي ${product.stock}${isExtrait ? ' غ' : ''} فقط`
+                                  : lang === 'en'
+                                  ? `Only ${product.stock}${isExtrait ? ' g' : ''} left`
+                                  : `Plus que ${product.stock}${isExtrait ? ' g' : ''}`}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {isOutOfStock ? (
