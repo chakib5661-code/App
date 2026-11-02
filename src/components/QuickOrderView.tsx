@@ -23,7 +23,6 @@ import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { isProductTopSeller, calculateDiscountedPrice, normalizeGender, type GenderKey } from '../utils/productUtils';
 import { BrandGenderFilters } from './BrandGenderFilters';
-import { cdnImage } from '../utils/cdnImage';
 
 interface QuickOrderViewProps {
   products: Product[];
@@ -649,7 +648,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                               <img
                                 src={
                                   product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
-                                    ? cdnImage(product.imageUrl)
+                                    ? product.imageUrl
                                     : isExtrait
                                     ? '/tulip-extrait-default.jpg'
                                     : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=200')
