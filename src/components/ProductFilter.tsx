@@ -317,7 +317,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
 
   return (
     <div
-      className="sm:sticky sm:top-[58px] z-20 bg-white/95 backdrop-blur-md rounded-2xl p-3 sm:p-4 shadow-2xs border border-rose-100 mb-3 sm:mb-6 space-y-2.5 sm:space-y-3 transition-all"
+      className="bg-white/95 backdrop-blur-md rounded-2xl p-3 sm:p-4 shadow-2xs border border-rose-100 mb-3 sm:mb-6 space-y-2.5 sm:space-y-3 transition-all"
       dir="ltr"
     >
       {/* Search + Filters button */}

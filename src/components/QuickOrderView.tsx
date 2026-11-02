@@ -249,7 +249,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
     <div className="min-h-screen bg-[#faf7f9] py-4 sm:py-6 pb-28" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
         {/* Filter Controls Bar */}
-        <div className="max-sm:contents sm:sticky sm:top-[58px] z-20 bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 shadow-2xs border border-rose-100 mb-4 sm:mb-6 space-y-3 transition-all">
+        <div className="max-sm:contents bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 shadow-2xs border border-rose-100 mb-4 sm:mb-6 space-y-3 transition-all">
           <div className="max-sm:contents flex flex-col sm:flex-row sm:flex-wrap gap-3 items-center sm:items-start">
             {/* Search Input */}
             <div className="relative w-full sm:max-w-md max-sm:mb-2">
@@ -291,7 +291,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
             )}
 
             {/* Family Tabs */}
-            <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 max-sm:sticky max-sm:top-[65px] max-sm:z-20 max-sm:bg-[#faf7f9] max-sm:py-2 max-sm:-mx-3 max-sm:px-3 max-sm:w-[calc(100%+1.5rem)] max-sm:border-b max-sm:border-rose-100 max-sm:mb-2">
+            <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 max-sm:py-2 max-sm:-mx-3 max-sm:px-3 max-sm:w-[calc(100%+1.5rem)] max-sm:border-b max-sm:border-rose-100 max-sm:mb-2">
               <button
                 type="button"
                 onClick={() => handleSelectFamily('all')}

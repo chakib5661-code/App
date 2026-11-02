@@ -39,6 +39,7 @@ import { ProductCard } from './components/ProductCard';
 import { ProductFilter, StockFilterType, SortOption } from './components/ProductFilter';
 import { CartDrawer } from './components/CartDrawer';
 import { QuickOrderView } from './components/QuickOrderView';
+import { ScrollToTopButton } from './components/ScrollToTopButton';
 import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
 import { ClearanceBanner } from './components/ClearanceBanner';
@@ -3580,6 +3581,8 @@ export default function App() {
 
         
       </footer>
+
+      <ScrollToTopButton lang={currentLang} />
 
       {/* Phone navigation (catalogue, quick order, cart) and room for it at the end of the page */}
       <MobileBottomNav
