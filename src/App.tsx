@@ -3029,6 +3029,17 @@ export default function App() {
           onToggleFavorite={handleToggleFavorite}
           offers={offers}
           isLoading={isCatalogLoading}
+          genderFilter={genderFilter}
+          onSelectGender={setGenderFilter}
+          genderCounts={genderCounts}
+          brandOptions={brandOptions}
+          selectedBrands={brandFilter}
+          onToggleBrand={(b) =>
+            setBrandFilter((prev) => (prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]))
+          }
+          showOnlyClearance={showOnlyClearance}
+          onToggleOnlyClearance={() => setShowOnlyClearance((v) => !v)}
+          clearanceCount={clearanceCount}
         />
       ) : (
         <>
