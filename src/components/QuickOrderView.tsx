@@ -250,7 +250,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
         {/* Filter Controls Bar */}
         <div className="max-sm:contents sm:sticky sm:top-[58px] z-20 bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 shadow-2xs border border-rose-100 mb-4 sm:mb-6 space-y-3 transition-all">
-          <div className="max-sm:contents flex flex-col sm:flex-row gap-3 items-center justify-between">
+          <div className="max-sm:contents flex flex-col sm:flex-row sm:flex-wrap gap-3 items-center sm:items-start">
             {/* Search Input */}
             <div className="relative w-full sm:max-w-md max-sm:mb-2">
               <Search className={`w-4 h-4 text-rose-400 absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2`} />
@@ -273,7 +273,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
             </div>
 
             {onSelectGender && onToggleBrand && onToggleOnlyClearance && (
-              <div className="w-full sm:w-auto max-sm:mb-2">
+              <div className="w-full sm:contents max-sm:mb-2">
                 <BrandGenderFilters
                   lang={lang}
                   genderFilter={genderFilter}

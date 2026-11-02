@@ -382,6 +382,21 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
         </div>
       )}
 
+      {/* Desktop: all brands on their own rows */}
+      {hasBrands && (
+        <div className="hidden sm:flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+          {brandOptions.map((b) => {
+            const on = selectedBrands.includes(b.name);
+            return (
+              <button key={b.name} type="button" onClick={() => onToggleBrand?.(b.name)} className={chip(on)}>
+                {b.name}
+                <span className="opacity-70"> ({b.count})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Family tabs + quick toggles (scroll sideways on phones) */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1">
         {familyTabs.map((f) => {
