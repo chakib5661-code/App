@@ -6,6 +6,7 @@ import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { calculateDiscountedPrice } from '../utils/productUtils';
+import { cdnImage } from '../utils/cdnImage';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -302,7 +303,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             <img
               src={
                 product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
-                  ? product.imageUrl
+                  ? cdnImage(product.imageUrl)
                   : isExtrait
                   ? '/tulip-extrait-default.jpg'
                   : product.family === 'Accessoire'
@@ -781,7 +782,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <img
                   src={
                     product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
-                      ? product.imageUrl
+                      ? cdnImage(product.imageUrl)
                       : isExtrait
                       ? '/tulip-extrait-default.jpg'
                       : product.family === 'Accessoire'

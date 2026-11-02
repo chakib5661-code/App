@@ -27,6 +27,7 @@ import { computeCart, defaultAddQuantity, getUnitPrice, suggestProducts, volumeN
 import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
+import { cdnImage } from '../utils/cdnImage';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -338,7 +339,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           <img
                             src={
                               product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
-                                ? product.imageUrl
+                                ? cdnImage(product.imageUrl)
                                 : fallbackImg
                             }
                             alt={loc.name}
@@ -837,7 +838,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
                           {product.imageUrl ? (
                             <img 
-                              src={product.imageUrl} 
+                              src={cdnImage(product.imageUrl)} 
                               alt={details.name} 
                               className="w-full h-full object-cover"
                               onError={(e) => {

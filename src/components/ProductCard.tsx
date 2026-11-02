@@ -6,6 +6,7 @@ import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { isProductTopSeller, calculateDiscountedPrice } from '../utils/productUtils';
+import { cdnImage } from '../utils/cdnImage';
 
 interface ProductCardProps {
   product: Product;
@@ -102,7 +103,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
         <img
           src={
             product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
-              ? product.imageUrl
+              ? cdnImage(product.imageUrl)
               : isExtrait
               ? '/tulip-extrait-default.jpg'
               : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=600')

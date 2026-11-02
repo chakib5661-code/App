@@ -6,6 +6,7 @@ import { calculateDiscountedPrice } from '../utils/productUtils';
 import { defaultAddQuantity } from '../utils/offers';
 import { formatDZD } from '../utils/formatDZD';
 import { getProductLocalizedDetails } from '../data/productTranslations';
+import { cdnImage } from '../utils/cdnImage';
 
 interface ManageFavoritesModalProps {
   isOpen: boolean;
@@ -152,7 +153,7 @@ export const ManageFavoritesModal: React.FC<ManageFavoritesModalProps> = ({
                 >
                   <div className="w-16 h-16 rounded-lg bg-slate-100 shrink-0 overflow-hidden flex items-center justify-center">
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={details.name} className="w-full h-full object-cover" loading="lazy" />
+                      <img src={cdnImage(p.imageUrl)} alt={details.name} className="w-full h-full object-cover" loading="lazy" />
                     ) : (
                       <Package className="w-6 h-6 text-slate-400" />
                     )}
