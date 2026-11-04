@@ -31,3 +31,204 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* ------------------------------------------------------------------ */
+/* Backgrounds                                                         */
+/* ------------------------------------------------------------------ */
+body {
+  background-color: #fdf2f6;
+}
+
+/* Fixed decorative layer behind the whole store (cheap: one painted layer, no animation). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 500px at 8% -5%, rgba(244, 114, 182, 0.28), transparent 60%),
+    radial-gradient(800px 500px at 100% 20%, rgba(251, 207, 232, 0.55), transparent 60%),
+    radial-gradient(700px 500px at 30% 100%, rgba(253, 164, 175, 0.25), transparent 60%),
+    linear-gradient(180deg, #fff1f5 0%, #fdf2f8 45%, #f8fafc 100%);
+}
+
+/* The store wrapper no longer paints its own flat grey, so the layer above shows through. */
+.min-h-screen.bg-slate-100 {
+  background-color: transparent;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dark theme: remaps the light surfaces; dark sections stay as they are */
+/* Toggled by data-theme on <html> (see src/utils/useTheme.ts)          */
+/* ------------------------------------------------------------------ */
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] body {
+  background-color: #0b0a1a;
+  color: #ecebff;
+}
+
+html[data-theme="dark"] body::before {
+  background:
+    radial-gradient(900px 520px at 10% -5%, rgba(124, 58, 237, 0.38), transparent 60%),
+    radial-gradient(800px 520px at 100% 25%, rgba(219, 39, 119, 0.28), transparent 60%),
+    radial-gradient(700px 500px at 35% 100%, rgba(139, 92, 246, 0.22), transparent 60%),
+    linear-gradient(180deg, #0f0c24 0%, #0b0a1a 100%);
+}
+
+html[data-theme="dark"] .bg-white,
+html[data-theme="dark"] .bg-slate-50 {
+  background-color: #15122e;
+}
+html[data-theme="dark"] .bg-slate-100 {
+  background-color: #1d1940;
+}
+html[data-theme="dark"] .min-h-screen.bg-slate-100 {
+  background-color: transparent;
+}
+html[data-theme="dark"] .bg-slate-200 {
+  background-color: #2c2757;
+}
+html[data-theme="dark"] .bg-rose-50,
+html[data-theme="dark"] .bg-rose-100,
+html[data-theme="dark"] .bg-pink-50,
+html[data-theme="dark"] .bg-pink-100 {
+  background-color: #3a1530;
+}
+html[data-theme="dark"] .bg-amber-50,
+html[data-theme="dark"] .bg-amber-100 {
+  background-color: #3a2d12;
+}
+html[data-theme="dark"] .bg-emerald-50,
+html[data-theme="dark"] .bg-emerald-100 {
+  background-color: #10302c;
+}
+html[data-theme="dark"] .bg-blue-50,
+html[data-theme="dark"] .bg-blue-100,
+html[data-theme="dark"] .bg-sky-50 {
+  background-color: #14223d;
+}
+
+html[data-theme="dark"] .bg-white\/95,
+html[data-theme="dark"] .bg-white\/90,
+html[data-theme="dark"] .bg-white\/80,
+html[data-theme="dark"] .bg-white\/70 {
+  background-color: rgba(21, 18, 46, 0.92);
+}
+html[data-theme="dark"] .bg-rose-50\/60,
+html[data-theme="dark"] .bg-rose-50\/70,
+html[data-theme="dark"] .bg-rose-100\/60 {
+  background-color: rgba(58, 21, 48, 0.7);
+}
+html[data-theme="dark"] .border-rose-100\/90 {
+  border-color: #5a2540;
+}
+html[data-theme="dark"] .hover\:bg-rose-50:hover,
+html[data-theme="dark"] .hover\:bg-rose-100:hover,
+html[data-theme="dark"] .hover\:bg-rose-100\/60:hover {
+  background-color: #4a1b3c;
+}
+html[data-theme="dark"] .hover\:bg-slate-50:hover,
+html[data-theme="dark"] .hover\:bg-slate-100:hover {
+  background-color: #231f4d;
+}
+html[data-theme="dark"] .text-\[\#880e4f\],
+html[data-theme="dark"] .text-\[\#4a0426\],
+html[data-theme="dark"] .hover\:text-\[\#9f0e4e\]:hover,
+html[data-theme="dark"] .hover\:text-\[\#880e4f\]:hover {
+  color: #f9a8d4;
+}
+
+html[data-theme="dark"] .from-\[\#fdf8fa\],
+html[data-theme="dark"] .from-white,
+html[data-theme="dark"] .from-rose-50 {
+  --tw-gradient-from: #15122e;
+}
+html[data-theme="dark"] .via-\[\#faf0f4\],
+html[data-theme="dark"] .via-rose-50 {
+  --tw-gradient-via: #1b1638;
+}
+html[data-theme="dark"] .to-\[\#fbf7f9\],
+html[data-theme="dark"] .to-white,
+html[data-theme="dark"] .to-amber-50 {
+  --tw-gradient-to: #15122e;
+}
+html[data-theme="dark"] .bg-rose-50\/30 {
+  background-color: rgba(58, 21, 48, 0.55);
+}
+html[data-theme="dark"] .border-rose-200\/80,
+html[data-theme="dark"] .border-rose-300\/80 {
+  border-color: #5a2540;
+}
+html[data-theme="dark"] .focus\:bg-white:focus {
+  background-color: #1d1940;
+}
+
+html[data-theme="dark"] .text-amber-700,
+html[data-theme="dark"] .text-amber-800,
+html[data-theme="dark"] .text-amber-900 {
+  color: #fcd34d;
+}
+html[data-theme="dark"] .text-emerald-700,
+html[data-theme="dark"] .text-emerald-800,
+html[data-theme="dark"] .text-emerald-900 {
+  color: #6ee7b7;
+}
+
+html[data-theme="dark"] .text-slate-950,
+html[data-theme="dark"] .text-slate-900,
+html[data-theme="dark"] .text-slate-800 {
+  color: #ecebff;
+}
+html[data-theme="dark"] .text-slate-700,
+html[data-theme="dark"] .text-slate-600 {
+  color: #cbc8f0;
+}
+html[data-theme="dark"] .text-slate-500 {
+  color: #a9a5d6;
+}
+html[data-theme="dark"] .text-\[\#9f0e4e\],
+html[data-theme="dark"] .text-\[\#be185d\],
+html[data-theme="dark"] .text-rose-700,
+html[data-theme="dark"] .text-rose-600 {
+  color: #f472b6;
+}
+html[data-theme="dark"] .text-\[\#70083b\],
+html[data-theme="dark"] .text-rose-800,
+html[data-theme="dark"] .text-rose-900 {
+  color: #f9a8d4;
+}
+
+html[data-theme="dark"] .border-slate-100,
+html[data-theme="dark"] .border-slate-200,
+html[data-theme="dark"] .border-slate-300 {
+  border-color: #2c2757;
+}
+html[data-theme="dark"] .border-rose-100,
+html[data-theme="dark"] .border-rose-200,
+html[data-theme="dark"] .border-pink-200 {
+  border-color: #5a2540;
+}
+html[data-theme="dark"] .divide-slate-100 > :not(:last-child),
+html[data-theme="dark"] .divide-slate-200 > :not(:last-child) {
+  border-color: #2c2757;
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  color-scheme: dark;
+}
+html[data-theme="dark"] ::placeholder {
+  color: #8884b8;
+}
+
+/* Smooth switch (only while the user is toggling is overkill; keep it short and cheap) */
+body,
+.bg-white,
+.bg-slate-50 {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}

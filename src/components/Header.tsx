@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { ProductFamily, StoreSettings, CustomerUser, LoyaltyTier, PreOrder } from '../types';
 import { AccountMenu, PushStatus } from './AccountMenu';
+import { ThemeToggle } from './ThemeToggle';
 import { DesktopMenu } from './DesktopMenu';
 import { INITIAL_STORE_SETTINGS } from '../data/initialProducts';
 import { formatDZD } from '../utils/formatDZD';
@@ -201,6 +202,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2.5">
+          <ThemeToggle lang={lang} className="max-sm:hidden" />
           {/* CUSTOMER AUTHENTICATION STATUS */}
           {currentCustomer ? (
             <>

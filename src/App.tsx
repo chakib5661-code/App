@@ -3045,7 +3045,18 @@ export default function App() {
       ) : (
         <>
           {/* Hero / Information Showcase Banner */}
-          <section className={`${isPricesVisible ? 'max-sm:hidden ' : ''}bg-gradient-to-br from-[#3b021d] via-[#4d0427] to-[#1f0210] text-white border-b border-[#70083b]/60 relative overflow-hidden`}>
+          <section
+            className={`${isPricesVisible ? 'max-sm:hidden ' : ''}bg-gradient-to-br from-[#3b021d] via-[#4d0427] to-[#1f0210] text-white border-b border-[#70083b]/60 relative overflow-hidden`}
+            style={
+              storeSettings.heroImageUrl
+                ? {
+                    backgroundImage: `linear-gradient(90deg, rgba(31,2,16,0.88) 0%, rgba(59,2,29,0.72) 55%, rgba(59,2,29,0.45) 100%), url("${storeSettings.heroImageUrl.replace(/"/g, '%22')}")`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                  }
+                : undefined
+            }
+          >
         <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#ec4899_1.2px,transparent_1.2px)] [background-size:16px_16px] pointer-events-none"></div>
 
         <div className="max-w-7xl mx-auto px-4 py-3.5 sm:py-6 lg:py-8 relative z-10">

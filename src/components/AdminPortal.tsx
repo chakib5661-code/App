@@ -57,6 +57,7 @@ import {
 } from '../utils/excelParser';
 import { AdminCustomerManagement } from './AdminCustomerManagement';
 import { AdminAdPopupManagement } from './AdminAdPopupManagement';
+import { AdminHeroImage } from './AdminHeroImage';
 import { AdminFlaconManagement } from './AdminFlaconManagement';
 import { AdminAccessoryManagement } from './AdminAccessoryManagement';
 import { AdminOffersManagement } from './AdminOffersManagement';
@@ -3141,6 +3142,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         {/* TAB 5: GESTION DU POPUP PUBLICITAIRE                            */}
         {/* ============================================================== */}
         {activeTab === 'ads' && canAccessAds && (
+          <>
+          <AdminHeroImage storeSettings={storeSettings} onUpdateSettings={onUpdateSettings} />
           <AdminAdPopupManagement
             banners={adBanners}
             products={products}
@@ -3151,6 +3154,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             isPopupEnabled={isAdPopupEnabled}
             onTogglePopupEnabled={onToggleAdPopupEnabled || (() => {})}
           />
+          </>
         )}
 
         {/* ============================================================== */}

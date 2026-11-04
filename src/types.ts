@@ -114,6 +114,8 @@ export interface StoreSettings {
   telegramAccessChatId?: string;
   telegramNotificationsEnabled?: boolean;
   underConstruction?: boolean;
+  /** Advertising picture shown behind the storefront hero (set from Admin > Ads). */
+  heroImageUrl?: string;
   vercelBlobFolderName?: string;
   vercelBlobToken?: string;
 }

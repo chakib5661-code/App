@@ -4,6 +4,7 @@ import { X, ClipboardList, Heart, LogIn, UserRound, FileText } from 'lucide-reac
 import type { AppLanguage } from '../translations';
 import type { CustomerUser, LoyaltyTier } from '../types';
 import { AccountMenu, PushStatus } from './AccountMenu';
+import { ThemeToggle } from './ThemeToggle';
 
 interface MobileMenuSheetProps {
   open: boolean;
@@ -137,6 +138,10 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
               <span className="flex items-center gap-3"><LogIn className="w-5 h-5 text-[#9f0e4e]" />{L('Connexion / Demander l\u2019accès', 'Log in / Request access', 'تسجيل الدخول / طلب الوصول')}</span>
             </button>
           )}
+        </div>
+
+        <div className="mx-4 mt-3 rounded-2xl border border-slate-200 overflow-hidden">
+          <ThemeToggle lang={lang} variant="row" />
         </div>
 
         <div className="mx-4 mt-3">
