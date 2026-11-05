@@ -334,7 +334,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {/* Badges: Family & Solde */}
             <div className={`absolute top-3 ${isRtl ? 'right-3' : 'left-3'} flex flex-col gap-1.5 items-start z-10`}>
               <span
-                className={`px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-bold flex items-center gap-1.5 shadow-sm ${
+                className={`tulip-photo-badge-rose px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-bold flex items-center gap-1.5 shadow-sm ${
                   isExtrait
                     ? 'bg-amber-100/95 text-amber-900 border border-amber-300'
                     : product.family === 'Accessoire'

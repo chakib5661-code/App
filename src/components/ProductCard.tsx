@@ -133,7 +133,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
         {/* Top Badges: Family & Big Solde Sticker */}
         <div className={`absolute top-2.5 ${isRtl ? 'right-2.5' : 'left-2.5'} flex flex-col gap-1.5 items-start z-10`}>
           <span
-            className={`max-sm:hidden px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm ${
+            className={`tulip-photo-badge-rose max-sm:hidden px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm ${
               isExtrait
                 ? 'bg-pink-50 text-[#880e4f] border border-pink-200/90'
                 : product.family === 'Accessoire'
@@ -190,12 +190,12 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
         {/* Stock Level Badge & Favorite Heart Button */}
         <div className={`absolute top-2.5 ${isRtl ? 'left-2.5' : 'right-2.5'} z-10 flex items-center gap-1.5`}>
           {isOutOfStock ? (
-            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1 shadow-xs">
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold tulip-photo-badge-rose bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1 shadow-xs">
               <XCircle className="w-3.5 h-3.5" />
               {t.filterOutOfStock}
             </span>
           ) : (
-            <span className="max-sm:hidden px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1 shadow-xs">
+            <span className="max-sm:hidden px-2.5 py-1 rounded-full text-[11px] font-bold tulip-photo-badge-emerald bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1 shadow-xs">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
               {t.filterInStock}
             </span>
