@@ -25,6 +25,8 @@ import { TulipLogo } from './TulipLogo';
 import { AppLanguage, translations } from '../translations';
 
 interface HeaderProps {
+  /** Float over the top of the banner (no logo, no background) until the page is scrolled. */
+  overlay?: boolean;
   storeSettings?: StoreSettings;
   activeFamily: ProductFamily | 'all';
   onSelectFamily: (fam: ProductFamily | 'all') => void;
@@ -67,6 +69,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  overlay = false,
   activeFamily,
   onSelectFamily,
   cartCount,
@@ -108,6 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Scroll detection to hide switch mode button bar when scrolling
   const [isScrolledDown, setIsScrolledDown] = React.useState(false);
+  const [pastBanner, setPastBanner] = React.useState(false);
 
   React.useEffect(() => {
     let lastY = window.scrollY;
@@ -118,6 +122,7 @@ export const Header: React.FC<HeaderProps> = ({
       } else {
         setIsScrolledDown(false);
       }
+      setPastBanner(y > 140);
       lastY = y;
     };
 
@@ -125,8 +130,16 @@ export const Header: React.FC<HeaderProps> = ({
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  // Overlay mode: controls float on the banner; once scrolled past it the normal bar (logo + family tabs) comes back.
+  const floating = overlay && !pastBanner;
+
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-rose-100/90 text-slate-800 shadow-xs transition-all" dir={isRtl ? 'rtl' : 'ltr'}>
+    <header
+      className={`${overlay ? 'fixed inset-x-0' : 'sticky'} top-0 z-40 text-slate-800 transition-all ${
+        floating ? 'bg-transparent' : 'bg-white/95 backdrop-blur-md border-b border-rose-100/90 shadow-xs'
+      }`}
+      dir={isRtl ? 'rtl' : 'ltr'}
+    >
       {/* Offline Status Bar */}
       {!isOnline && (
         <div className="bg-gradient-to-r from-[#70083b] to-[#9f0e4e] text-white px-3 py-1.5 text-xs font-bold flex items-center justify-center gap-2 border-b border-[#5a052e] shadow-xs">
@@ -141,12 +154,12 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Main Navbar */}
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-3">
         {/* Brand & Tulip Logo */}
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center gap-2 ${floating ? 'invisible' : ''}`}>
           <TulipLogo variant="horizontal" size="sm" theme="light" />
         </div>
 
         {/* Product Family Filter Navigation (Desktop only) */}
-        <div className="hidden lg:flex items-center bg-rose-50/70 p-1 rounded-xl border border-rose-100/90">
+        <div className={`${floating ? 'hidden' : 'hidden lg:flex'} items-center bg-rose-50/70 p-1 rounded-xl border border-rose-100/90`}>
           <button
             id="nav-family-all"
             type="button"
@@ -202,7 +215,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2.5">
-          <ThemeToggle lang={lang} className="max-sm:hidden" />
+          <ThemeToggle lang={lang} className={floating ? 'max-sm:hidden bg-white/90! text-[#9f0e4e]! border-white! shadow-sm' : 'max-sm:hidden'} />
           {/* CUSTOMER AUTHENTICATION STATUS */}
           {currentCustomer ? (
             <>
@@ -335,7 +348,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* DEDICATED SUB-HEADER BAR: SWITCH MODE CENTERED */}
-      {onToggleInterface && (
+      {onToggleInterface && !overlay && (
         <div
           className={`max-sm:hidden bg-gradient-to-r from-[#fdf8fa] via-[#faf0f4] to-[#fbf7f9] border-t border-rose-100/90 flex items-center justify-center relative transition-all duration-300 overflow-hidden ${
             isScrolledDown ? 'max-h-0 py-0 opacity-0 border-transparent pointer-events-none' : 'max-h-16 py-2 opacity-100'

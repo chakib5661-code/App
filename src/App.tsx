@@ -35,6 +35,7 @@ import { PacksHeader } from './components/PacksHeader';
 import { INITIAL_PRODUCTS, INITIAL_STORE_SETTINGS } from './data/initialProducts';
 import { INITIAL_CUSTOMER_APPLICATIONS, INITIAL_AD_BANNERS } from './data/initialCustomerData';
 import { Header } from './components/Header';
+import { BannerHero } from './components/BannerHero';
 import { ProductCard } from './components/ProductCard';
 import { ProductFilter, StockFilterType, SortOption } from './components/ProductFilter';
 import { CartDrawer } from './components/CartDrawer';
@@ -2806,6 +2807,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col selection:bg-amber-500 selection:text-slate-950 font-sans">
       {/* Top Navigation */}
       <Header
+        overlay={currentInterface === 'showroom' && !isAdminMode}
         storeSettings={storeSettings}
         activeFamily={selectedFamily}
         onSelectFamily={setSelectedFamily}
@@ -3044,19 +3046,11 @@ export default function App() {
         />
       ) : (
         <>
+          {/* Banner (logo and title are in the picture). Admins keep the old hero with the POS module. */}
+          {isAdminMode ? (
+          <>
           {/* Hero / Information Showcase Banner */}
-          <section
-            className={`${isPricesVisible ? 'max-sm:hidden ' : ''}bg-gradient-to-br from-[#3b021d] via-[#4d0427] to-[#1f0210] text-white border-b border-[#70083b]/60 relative overflow-hidden`}
-            style={
-              storeSettings.heroImageUrl
-                ? {
-                    backgroundImage: `linear-gradient(90deg, rgba(31,2,16,0.88) 0%, rgba(59,2,29,0.72) 55%, rgba(59,2,29,0.45) 100%), url("${storeSettings.heroImageUrl.replace(/"/g, '%22')}")`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                  }
-                : undefined
-            }
-          >
+          <section className={`${isPricesVisible ? 'max-sm:hidden ' : ''}bg-gradient-to-br from-[#3b021d] via-[#4d0427] to-[#1f0210] text-white border-b border-[#70083b]/60 relative overflow-hidden`}>
         <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#ec4899_1.2px,transparent_1.2px)] [background-size:16px_16px] pointer-events-none"></div>
 
         <div className="max-w-7xl mx-auto px-4 py-3.5 sm:py-6 lg:py-8 relative z-10">
@@ -3178,6 +3172,18 @@ export default function App() {
           </div>
         </div>
       </section>
+          </>
+          ) : (
+          <BannerHero
+            imageUrl={storeSettings.heroImageUrl || '/tulip-banner.jpg'}
+            lang={currentLang}
+            activeFamily={selectedFamily}
+            onSelectFamily={setSelectedFamily}
+            familyCounts={familyCounts}
+            totalCount={familyCounts.all}
+            onQuickOrder={() => handleSelectInterface('quick')}
+          />
+          )}
 
       {/* Reward ladder banner (same as the cart) */}
       {isPricesVisible && offers.rewardLadder.enabled && (
@@ -3203,7 +3209,7 @@ export default function App() {
       />
 
       {/* Main Catalog View */}
-      <main className="max-w-7xl mx-auto px-4 py-6 sm:py-8 flex-1 w-full">
+      <main id="catalogue" className="max-w-7xl mx-auto px-4 py-6 sm:py-8 flex-1 w-full scroll-mt-16">
         <ClearanceBanner
           count={clearanceCount}
           maxDiscount={clearanceInfo.maxDiscount}
