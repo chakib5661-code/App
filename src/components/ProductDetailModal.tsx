@@ -5,7 +5,7 @@ import { OffersConfig, Product } from '../types';
 import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
-import { calculateDiscountedPrice } from '../utils/productUtils';
+import { calculateDiscountedPrice, isProductTopSeller, normalizeGender } from '../utils/productUtils';
 import { effectiveTiers, getUnitPrice, resolveVolumeTier, volumeNudge } from '../utils/offers';
 
 interface ProductDetailModalProps {
@@ -274,6 +274,57 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const calculatedTotalPrice = unitPriceDA * selectedQty;
   const containersCount = isExtrait ? (selectedQty / 100).toFixed(selectedQty % 100 === 0 ? 0 : 1) : null;
 
+  const gKey = normalizeGender(product.gender);
+  const genderChip = gKey === 'men' ? 'Homme' : gKey === 'women' ? 'Femme' : gKey === 'unisex' ? 'Mixte' : '';
+  const olf = product.olfactive;
+  const olfactiveCard = olf ? (
+    <div className="bg-white border border-rose-100 rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-lg font-bold text-slate-900" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+          {lang === 'ar' ? 'البطاقة العطرية' : lang === 'en' ? 'Fragrance profile' : 'Fiche olfactive'}
+        </h4>
+        {olf.suggested && (
+          <span className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2.5 py-1 whitespace-nowrap">
+            {lang === 'en' ? 'Season and time: suggestion' : 'Saison et moment : suggestion'}
+          </span>
+        )}
+      </div>
+      {(olf.top || olf.middle || olf.base) ? (
+        <div className="grid grid-cols-3 gap-2 text-xs leading-snug">
+          {[
+            [lang === 'en' ? 'TOP' : 'TÊTE', olf.top],
+            [lang === 'en' ? 'HEART' : 'CŒUR', olf.middle],
+            [lang === 'en' ? 'BASE' : 'FOND', olf.base],
+          ].map(([label, val]) => (
+            <div key={label as string} className="bg-[#fdf6f8] rounded-xl p-2.5">
+              <div className="text-[10px] font-black tracking-wider text-[#9f0e4e]">{label}</div>
+              <div className="text-slate-700 mt-1">{(val as string) || '—'}</div>
+            </div>
+          ))}
+        </div>
+      ) : olf.notes ? (
+        <div className="text-xs text-slate-700">{olf.notes}</div>
+      ) : null}
+      {olf.accords && (
+        <div>
+          <div className="text-[11px] font-bold text-slate-500 mb-1.5 uppercase">{lang === 'en' ? 'Main accords' : 'Accords principaux'}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {olf.accords.split(',').map((a) => a.trim()).filter(Boolean).map((a) => (
+              <span key={a} className="text-xs font-semibold text-[#9f0e4e] bg-rose-100 rounded-full px-3 py-1">{a}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      {(olf.season || olf.time) && (
+        <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-700">
+          {olf.season && <span className="border border-rose-200 rounded-xl px-3 py-1.5">❄ {olf.season}</span>}
+          {olf.time && <span className="border border-rose-200 rounded-xl px-3 py-1.5">☾ {olf.time}</span>}
+        </div>
+      )}
+      {olf.description && <p className="text-xs text-slate-600 leading-relaxed">{olf.description}</p>}
+    </div>
+  ) : null;
+
   return (
     <AnimatePresence>
       <div
@@ -289,303 +340,168 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 20, scale: 0.98 }}
           transition={{ type: 'spring', damping: 28, stiffness: 350 }}
-          className="bg-white rounded-t-[28px] sm:rounded-3xl shadow-2xl max-w-xl md:max-w-3xl lg:max-w-4xl w-full max-h-[92dvh] sm:max-h-[90vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden border border-slate-100 relative"
+          className="bg-white rounded-t-[28px] md:rounded-[28px] shadow-2xl max-w-xl md:max-w-5xl w-full max-h-[94dvh] md:max-h-[92vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden border border-rose-100 relative"
           onClick={(e) => e.stopPropagation()}
           id="product-detail-modal-container"
         >
-          {/* Mobile Drag Indicator Handle */}
-          <div className="md:hidden absolute top-2 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-            <div className="w-10 h-1 rounded-full bg-slate-300/80 shadow-xs" />
-          </div>
-
-          {/* Product Image: Full uncropped size adjusted to container with NO backdrop */}
-          <div
-            className="w-full md:w-1/2 bg-white relative min-h-[260px] sm:min-h-[320px] md:min-h-[440px] max-h-[380px] md:max-h-[560px] flex items-center justify-center p-4 sm:p-6 shrink-0 overflow-hidden cursor-zoom-in group select-none border-b md:border-b-0 md:border-r border-slate-100"
-            onMouseEnter={() => setIsHoveringImage(true)}
-            onMouseLeave={() => setIsHoveringImage(false)}
-            onMouseMove={handleMouseMoveImage}
-            onClick={() => setIsLightboxOpen(true)}
-            title="Cliquer pour agrandir et zoomer en plein écran"
-          >
-            <img
-              src={
-                product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
-                  ? product.imageUrl
-                  : isExtrait
-                  ? '/tulip-extrait-default.jpg'
-                  : product.family === 'Accessoire'
-                  ? 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600'
-                  : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=600')
-              }
-              alt={localized.name}
-              className="max-w-full max-h-full w-auto h-auto object-contain transition-transform duration-200 ease-out will-change-transform drop-shadow-sm"
-              style={{
-                transformOrigin: `${mousePos.x}% ${mousePos.y}%`,
-                transform: isHoveringImage ? 'scale(1.8)' : 'scale(1)',
-              }}
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                const target = e.currentTarget as HTMLImageElement;
-                target.onerror = null;
-                target.src = '/tulip-extrait-default.jpg';
-              }}
-            />
-
-            {/* Floating Zoom HD Badge */}
-            <div className="absolute bottom-3 right-3 z-20 pointer-events-none">
-              <span className="px-2.5 py-1.5 rounded-xl bg-slate-950/80 text-white text-xs font-bold backdrop-blur-md flex items-center gap-1.5 shadow-lg border border-white/20 transition-all duration-300 group-hover:scale-105 group-hover:bg-[#70083b]/90">
-                <ZoomIn className="w-3.5 h-3.5 text-pink-300" />
-                <span className="text-[11px] font-bold">Zoom HD</span>
-              </span>
-            </div>
-
-            {/* Badges: Family & Solde */}
-            <div className={`absolute top-3 ${isRtl ? 'right-3' : 'left-3'} flex flex-col gap-1.5 items-start z-10`}>
-              <span
-                className={`px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-bold flex items-center gap-1.5 shadow-sm ${
-                  isExtrait
-                    ? 'bg-amber-100/95 text-amber-900 border border-amber-300'
+          {/* Left column: single picture + fragrance profile (desktop) */}
+          <div className="w-full md:w-[42%] shrink-0 bg-[#fdf6f8] md:border-r border-rose-100 p-4 md:p-6 flex flex-col gap-4 md:overflow-y-auto">
+            <div
+              className="relative rounded-2xl bg-gradient-to-br from-rose-100 to-rose-200/70 h-64 md:h-[26rem] shrink-0 flex items-center justify-center overflow-hidden cursor-zoom-in group select-none"
+              onMouseEnter={() => setIsHoveringImage(true)}
+              onMouseLeave={() => setIsHoveringImage(false)}
+              onMouseMove={handleMouseMoveImage}
+              onClick={() => setIsLightboxOpen(true)}
+              title="Cliquer pour agrandir et zoomer en plein écran"
+            >
+              <img
+                src={
+                  product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
+                    ? product.imageUrl
+                    : isExtrait
+                    ? '/tulip-extrait-default.jpg'
                     : product.family === 'Accessoire'
-                    ? 'bg-teal-100/95 text-teal-900 border border-teal-300'
-                    : 'bg-indigo-100/95 text-indigo-900 border border-indigo-300'
-                }`}
-              >
-                {isExtrait ? (
-                  <Sparkles className="w-3.5 h-3.5 text-amber-700" />
-                ) : product.family === 'Accessoire' ? (
-                  <Wrench className="w-3.5 h-3.5 text-teal-700" />
-                ) : (
-                  <Layers className="w-3.5 h-3.5 text-indigo-700" />
-                )}
-                {isExtrait
-                  ? t.extraitsTitle.split(' ')[0]
-                  : product.family === 'Accessoire'
-                  ? (t.accessoriesTitle ? t.accessoriesTitle.split(' ')[0] : 'Accessoires')
-                  : t.flaconsTitle.split(' ')[0]}
-              </span>
+                    ? 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600'
+                    : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=600')
+                }
+                alt={localized.name}
+                className="max-w-full max-h-full w-auto h-auto object-contain transition-transform duration-200 ease-out will-change-transform drop-shadow-sm"
+                style={{
+                  transformOrigin: `${mousePos.x}% ${mousePos.y}%`,
+                  transform: isHoveringImage ? 'scale(1.8)' : 'scale(1)',
+                }}
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  const target = e.currentTarget as HTMLImageElement;
+                  target.onerror = null;
+                  target.src = '/tulip-extrait-default.jpg';
+                }}
+              />
 
-              {/* Big Promo / Solde Sticker */}
-              {hasDiscount && (
-                <span className="px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-black bg-rose-600 text-white shadow-lg flex items-center gap-1.5 tracking-wider uppercase border-2 border-white animate-bounce">
-                  <span>🔥 -{product.discountPercent}%</span>
-                  <span>{t.soldeBadge}</span>
+              <div className="absolute top-3 left-3 flex flex-col gap-1.5 items-start z-10">
+                <span className="px-3 py-1 rounded-full text-[11px] font-black bg-[#9f0e4e] text-white tracking-wide">
+                  {isExtrait
+                    ? 'EXTRAIT 100% PUR'
+                    : product.family === 'Accessoire'
+                    ? (t.accessoriesTitle ? t.accessoriesTitle.split(' ')[0] : 'Accessoires').toUpperCase()
+                    : t.flaconsTitle.split(' ')[0].toUpperCase()}
                 </span>
-              )}
-            </div>
-
-            {/* Mobile Top Controls: Close & Favorite with crisp contrast on white background */}
-            <div className={`md:hidden absolute top-3 ${isRtl ? 'left-3' : 'right-3'} flex items-center gap-2 z-10`}>
-              {onToggleFavorite && (
-                <button
-                  type="button"
-                  onClick={() => onToggleFavorite(product.id)}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md transition cursor-pointer shadow-sm border ${
-                    isFavorite
-                      ? 'bg-rose-500 text-white border-rose-500'
-                      : 'bg-white/95 text-slate-500 hover:text-rose-600 border-slate-200/90'
-                  }`}
-                  title={isFavorite ? t.removeFromFavorites : t.addToFavorites}
-                  aria-label={isFavorite ? t.removeFromFavorites : t.addToFavorites}
-                  id="mobile-modal-favorite-btn"
-                >
-                  <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/95 text-slate-700 hover:text-slate-950 border border-slate-200/90 transition cursor-pointer shadow-sm"
-                aria-label="Fermer"
-                id="mobile-modal-close-btn"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Right: Product Information & Controls */}
-          <div className="w-full md:w-1/2 flex flex-col flex-1 overflow-hidden">
-            {/* Scrollable details body */}
-            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-3 sm:space-y-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span className="font-mono text-[11px] sm:text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded font-medium border border-slate-200">
-                    {product.code}
+                {hasDiscount && (
+                  <span className="px-3 py-1 rounded-full text-[11px] font-black bg-rose-600 text-white shadow-md border-2 border-white">
+                    🔥 -{product.discountPercent}% {t.soldeBadge}
                   </span>
-                  <h3 className="text-base sm:text-xl font-black text-slate-900 mt-1 leading-snug">
-                    {localized.name}
-                  </h3>
-                </div>
-                <div className="hidden md:flex items-center gap-1.5 shrink-0">
-                  {onToggleFavorite && (
-                    <button
-                      type="button"
-                      onClick={() => onToggleFavorite(product.id)}
-                      className={`p-2 rounded-lg transition cursor-pointer border ${
-                        isFavorite
-                          ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100'
-                          : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50/50 border-transparent'
-                      }`}
-                      title={isFavorite ? t.removeFromFavorites : t.addToFavorites}
-                      id="desktop-modal-favorite-btn"
-                    >
-                      <Heart className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition cursor-pointer"
-                    aria-label="Fermer"
-                    id="desktop-modal-close-btn"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
+                )}
               </div>
 
-              {/* Badges / Specs & Stock */}
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
-                <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 font-medium flex items-center gap-1 border border-slate-200">
+              {/* Favorite + (mobile) close */}
+              <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+                {onToggleFavorite && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleFavorite(product.id);
+                    }}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center transition cursor-pointer shadow-sm ${
+                      isFavorite ? 'bg-rose-500 text-white' : 'bg-white text-[#9f0e4e] hover:bg-rose-50'
+                    }`}
+                    title={isFavorite ? t.removeFromFavorites : t.addToFavorites}
+                    aria-label={isFavorite ? t.removeFromFavorites : t.addToFavorites}
+                    id="mobile-modal-favorite-btn"
+                  >
+                    <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClose();
+                  }}
+                  className="md:hidden w-9 h-9 rounded-full flex items-center justify-center bg-white text-slate-700 shadow-sm cursor-pointer"
+                  aria-label="Fermer"
+                  id="mobile-modal-close-btn"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <span className="absolute bottom-3 right-3 px-2.5 py-1.5 rounded-xl bg-slate-950/75 text-white text-[11px] font-bold flex items-center gap-1.5 pointer-events-none">
+                <ZoomIn className="w-3.5 h-3.5 text-pink-300" /> Zoom HD
+              </span>
+            </div>
+
+            <div className="hidden md:block">{olfactiveCard}</div>
+          </div>
+
+          {/* Right column: info, prices, format, quantity */}
+          <div className="flex-1 min-w-0 flex flex-col md:min-h-0 md:overflow-hidden">
+            <div className="p-4 md:p-8 md:pb-4 space-y-4 md:overflow-y-auto md:flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-mono">RÉF. {product.code}</span>
+                  {isProductTopSeller(product) && (
+                    <span className="px-2.5 py-1 rounded-lg bg-rose-100 text-[#9f0e4e] uppercase">
+                      {product.style === 'Niche' ? 'Best-seller niche' : 'Best-seller'}
+                    </span>
+                  )}
+                  {genderChip && (
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600">{genderChip}</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="hidden md:flex w-9 h-9 shrink-0 rounded-full bg-slate-100 hover:bg-slate-200 items-center justify-center text-slate-600 cursor-pointer"
+                  aria-label="Fermer"
+                  id="desktop-modal-close-btn"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div>
+                <h3
+                  className="text-3xl md:text-4xl font-bold text-[#9f0e4e] leading-tight"
+                  style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+                >
+                  {localized.name}
+                </h3>
+                {product.brand && (
+                  <div className="text-sm text-slate-600 mt-1.5">
+                    {lang === 'en' ? 'Inspired by' : 'Inspiration olfactive de prestige'} : <strong className="text-slate-900">{product.brand}</strong>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+                <span className="px-3 py-1.5 rounded-full border border-rose-200 text-slate-700 flex items-center gap-1">
                   <Package className="w-3.5 h-3.5 text-slate-500" />
                   {isExtrait ? '1g (Flacon scellé 100g)' : product.unit}
                 </span>
                 {localized.origin && (
-                  <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 font-medium flex items-center gap-1 border border-slate-200">
+                  <span className="px-3 py-1.5 rounded-full border border-rose-200 text-slate-700 flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5 text-slate-500" />
                     {localized.origin}
                   </span>
                 )}
                 {isOutOfStock ? (
-                  <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                    <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                    {t.filterOutOfStock}
-                  </div>
+                  <span className="px-3 py-1.5 rounded-full bg-rose-100 text-rose-800 flex items-center gap-1">
+                    <XCircle className="w-3.5 h-3.5" /> {t.filterOutOfStock}
+                  </span>
                 ) : (
-                  <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
-                    <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                    {t.filterInStock}
-                  </div>
+                  <span className="px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                    {isExtrait ? `${product.stock.toLocaleString('fr-FR')} g ${lang === 'en' ? 'in stock' : 'en stock'}` : t.filterInStock}
+                  </span>
                 )}
               </div>
 
-              {/* Extrait Container Callout */}
-              {isExtrait && (
-                <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-950 space-y-1">
-                  <div className="font-bold flex items-center justify-between">
-                    <span>{t.container100g}</span>
-                    <span className="text-amber-800 font-bold">
-                      {isPricesVisible ? (
-                        `${formatDZD(discountedPriceDA * 100)} / flacon`
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded">
-                          <Lock className="w-3 h-3" /> {t.confidentialPriceBadge}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Volume price tiers */}
-              {isPricesVisible && tiers.length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="text-[11px] font-black uppercase tracking-wider text-[#9f0e4e]">
-                    {lang === 'ar' ? 'أسعار الكمية' : lang === 'en' ? 'Volume prices' : 'Paliers dégressifs'}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[{ minQty: 1, priceDA: calculateDiscountedPrice(product.priceDA, product.discountPercent) }, ...tiers.slice(0, 2)].map((tier, i, arr) => {
-                      const next = arr[i + 1];
-                      const on = (appliedTier ? appliedTier.minQty === tier.minQty : i === 0);
-                      const unit = i === 0 ? tier.priceDA : getUnitPrice(product, tier.minQty, offers);
-                      const label = next ? `${tier.minQty}${isExtrait ? 'g' : ''} – ${next.minQty - 1}${isExtrait ? 'g' : ''}` : `${tier.minQty}${isExtrait ? 'g' : ''}+`;
-                      return (
-                        <button
-                          key={tier.minQty}
-                          type="button"
-                          onClick={() => {
-                            const q = Math.min(availableStock > 0 ? availableStock : tier.minQty, Math.max(1, tier.minQty));
-                            setSelectedQty(q);
-                            setQtyInputValue(String(q));
-                          }}
-                          className={`rounded-xl border p-2 text-left cursor-pointer transition ${
-                            on ? 'border-[#9f0e4e] border-2 bg-rose-50' : 'border-rose-200/80 bg-white hover:border-rose-300'
-                          }`}
-                        >
-                          <div className="text-[10px] font-bold text-slate-600">{label}</div>
-                          <div className="text-sm font-black text-slate-900">{formatDZD(unit)}</div>
-                          <div className="text-[10px] text-slate-500">{isExtrait ? '/ g' : '/ u'}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Localized Description */}
-              <div className="text-xs text-slate-600 leading-relaxed space-y-1 border-t border-slate-100 pt-2.5">
-                <h4 className="font-bold text-slate-900 text-xs">
-                  {lang === 'ar' ? 'بطاقة المنتج الوصفية:' : lang === 'en' ? 'Product Description:' : 'Fiche Matière Première :'}
-                </h4>
-                <p className="text-slate-600">{localized.description}</p>
-              </div>
-
-              {/* Fiche olfactive (from the tags import) */}
-              {product.olfactive && (
-                <div className="rounded-2xl border border-rose-100 bg-rose-50/40 p-3 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-black text-slate-900">
-                      {lang === 'ar' ? 'البطاقة العطرية' : lang === 'en' ? 'Fragrance profile' : 'Fiche olfactive'}
-                    </h4>
-                    {product.olfactive.suggested && (
-                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">
-                        {lang === 'en' ? 'Suggestion' : 'Suggestion'}
-                      </span>
-                    )}
-                  </div>
-                  {(product.olfactive.top || product.olfactive.middle || product.olfactive.base) ? (
-                    <div className="grid grid-cols-3 gap-1.5 text-[11px] leading-snug">
-                      {[
-                        [lang === 'en' ? 'TOP' : 'TÊTE', product.olfactive.top],
-                        [lang === 'en' ? 'HEART' : 'CŒUR', product.olfactive.middle],
-                        [lang === 'en' ? 'BASE' : 'FOND', product.olfactive.base],
-                      ].map(([label, val]) => (
-                        <div key={label as string} className="bg-white rounded-lg p-2 border border-rose-100">
-                          <div className="text-[10px] font-black tracking-wider text-[#9f0e4e]">{label}</div>
-                          <div className="text-slate-700 mt-0.5">{(val as string) || '—'}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : product.olfactive.notes ? (
-                    <div className="text-[11px] text-slate-700">{product.olfactive.notes}</div>
-                  ) : null}
-                  {product.olfactive.accords && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {product.olfactive.accords.split(',').map((a) => a.trim()).filter(Boolean).map((a) => (
-                        <span key={a} className="text-[11px] font-semibold text-[#9f0e4e] bg-rose-100 rounded-full px-2.5 py-0.5">{a}</span>
-                      ))}
-                    </div>
-                  )}
-                  {(product.olfactive.season || product.olfactive.time) && (
-                    <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-700">
-                      {product.olfactive.season && <span className="border border-rose-200 rounded-lg px-2 py-0.5 bg-white">❄ {product.olfactive.season}</span>}
-                      {product.olfactive.time && <span className="border border-rose-200 rounded-lg px-2 py-0.5 bg-white">☾ {product.olfactive.time}</span>}
-                    </div>
-                  )}
-                  {product.olfactive.description && (
-                    <p className="text-[11px] text-slate-600 leading-relaxed">{product.olfactive.description}</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Bottom Action Bar: Price, Presets, Quantity, and Add to Preorder */}
-            <div className="p-4 sm:p-6 pt-3 border-t border-slate-200 bg-slate-50/70 sm:bg-white shrink-0">
               {!isPricesVisible ? (
-                <div className="mb-2.5 p-2.5 sm:p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-2.5">
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-2.5">
                   <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
                     <Lock className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span className="text-[11px] sm:text-xs">{t.priceHiddenNotice}</span>
+                    <span>{t.priceHiddenNotice}</span>
                   </div>
                   <button
                     type="button"
@@ -593,59 +509,172 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       onClose();
                       onRequireLogin?.();
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shrink-0 cursor-pointer shadow-xs transition"
+                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shrink-0 cursor-pointer"
                     id="modal-login-btn"
                   >
                     {t.loginBtn}
                   </button>
                 </div>
               ) : (
-                <div className="flex items-baseline justify-between mb-2">
-                  <div>
-                    <span className="text-[11px] text-slate-500 block">
-                      {isExtrait ? t.perGram : t.perPiece}
+                <>
+                  <div className="flex items-baseline justify-between gap-3 pt-1">
+                    <span className="text-xs text-slate-500">
+                      {tiers.length > 0 ? 'Tarif pro B2B, dégressif' : isExtrait ? t.perGram : t.perPiece}
                     </span>
-                    {hasDiscount ? (
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-xl sm:text-2xl font-black text-rose-600">
-                          {formatDZD(discountedPriceDA)}
-                        </span>
-                        <span className="text-xs text-slate-400 line-through">
-                          {formatDZD(product.priceDA)}
-                        </span>
-                        {isExtrait && <span className="text-xs font-bold text-rose-700">/ 1g</span>}
-                      </div>
-                    ) : (
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-xl sm:text-2xl font-black text-slate-950">
-                          {formatDZD(unitPriceDA)}
-                        </span>
-                        {isExtrait && <span className="text-xs font-bold text-[#880e4f]">/ 1g</span>}
-                      </div>
-                    )}
+                    <div className="flex items-baseline gap-1.5">
+                      <span className={`text-3xl font-extrabold ${hasDiscount ? 'text-rose-600' : 'text-[#9f0e4e]'}`}>
+                        {formatDZD(unitPriceDA)}
+                      </span>
+                      {hasDiscount && <span className="text-xs text-slate-400 line-through">{formatDZD(product.priceDA)}</span>}
+                      <span className="text-sm text-slate-500">{isExtrait ? '/ g' : '/ u'}</span>
+                    </div>
                   </div>
 
-                  <div className="text-right">
-                    <span className="text-[10px] sm:text-[11px] text-slate-500 block">Total sélectionné :</span>
-                    <span className="text-sm sm:text-base font-black text-slate-900">
-                      {formatDZD(calculatedTotalPrice)}
-                    </span>
-                    {isExtrait && (
-                      <span className="block text-[10px] text-slate-500">
-                        ({selectedQty}g ~ {containersCount} fl.)
-                      </span>
-                    )}
+                  {tiers.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2.5">
+                      {[{ minQty: 1, priceDA: 0 }, ...tiers.slice(0, 2)].map((tier, i, arr) => {
+                        const nextT = arr[i + 1];
+                        const on = appliedTier ? appliedTier.minQty === tier.minQty : i === 0;
+                        const unit = getUnitPrice(product, tier.minQty, offers);
+                        const baseUnit = getUnitPrice(product, 1, offers);
+                        const u = isExtrait ? 'g' : '';
+                        const label = i === 0
+                          ? (nextT ? `${isExtrait ? '100' : '1'}${u} – ${nextT.minQty - 1}${u}` : `1${u}+`)
+                          : nextT
+                          ? `${tier.minQty}${u} – ${nextT.minQty - 1}${u}`
+                          : `${tier.minQty}${u} ${lang === 'en' ? '+' : 'et plus'}`;
+                        return (
+                          <button
+                            key={tier.minQty}
+                            type="button"
+                            onClick={() => {
+                              const q = Math.min(availableStock > 0 ? availableStock : tier.minQty, Math.max(1, i === 0 && isExtrait ? 100 : tier.minQty));
+                              setSelectedQty(q);
+                              setQtyInputValue(String(q));
+                            }}
+                            className={`rounded-2xl p-3 text-left cursor-pointer transition ${
+                              on ? 'border-2 border-[#9f0e4e] bg-rose-50' : 'border border-rose-200 bg-white hover:border-rose-300'
+                            }`}
+                          >
+                            <div className="text-[11px] font-bold text-slate-600">{label}</div>
+                            <div className="text-base font-extrabold text-slate-900 mt-0.5">{formatDZD(unit)}</div>
+                            <div className={`text-[11px] ${i === 0 ? 'text-slate-500' : 'text-emerald-700'}`}>
+                              {i === 0 ? (lang === 'en' ? 'Standard rate' : 'Tarif standard') : `−${Math.max(0, Math.round((baseUnit - unit) * 100) / 100).toLocaleString('fr-FR')} DA / ${isExtrait ? 'g' : 'u'}`}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="md:hidden">{olfactiveCard}</div>
+
+              {isPricesVisible && isExtrait && !isOutOfStock && !isAllInCart && (
+                <div className="border-t border-rose-100 pt-4">
+                  <div className="text-xs font-black tracking-wider text-[#9f0e4e] mb-2.5">1. {lang === 'en' ? 'SEALED FORMAT' : 'FORMAT SCELLÉ'}</div>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {[
+                      { g: 100, sub: lang === 'en' ? 'Sample / tester' : 'Échantillon / testeur' },
+                      { g: 500, sub: lang === 'en' ? 'Half-kilo drum' : 'Bidon demi-kilo' },
+                      { g: 1000, sub: lang === 'en' ? 'Original alu drum' : "Bidon alu d'origine" },
+                    ].map((f) => {
+                      if (f.g > availableStock) return null;
+                      const on = selectedQty === f.g;
+                      return (
+                        <button
+                          key={f.g}
+                          type="button"
+                          onClick={() => {
+                            setSelectedQty(f.g);
+                            setQtyInputValue(String(f.g));
+                          }}
+                          className={`rounded-2xl p-3 text-left cursor-pointer transition ${
+                            on ? 'border-2 border-[#9f0e4e] bg-rose-50' : 'border border-rose-200 bg-white hover:border-rose-300'
+                          }`}
+                          id={`modal-preset-${f.g}g`}
+                        >
+                          <div className="text-base font-extrabold text-slate-900">{f.g === 1000 ? '1 000 g' : `${f.g} g`}</div>
+                          <div className="text-[11px] text-slate-500 leading-tight">{f.sub}</div>
+                          <div className="text-xs font-bold text-slate-800 mt-1">{formatDZD(getUnitPrice(product, f.g, offers) * f.g)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {!isOutOfStock && !isAllInCart && (
+                <div className={isExtrait && isPricesVisible ? '' : 'border-t border-rose-100 pt-4'}>
+                  <div className="text-xs font-black tracking-wider text-[#9f0e4e] mb-2.5">
+                    {isExtrait && isPricesVisible ? '2. ' : ''}
+                    {lang === 'en' ? 'QUANTITY' : 'QUANTITÉ'}
+                    {isExtrait ? (lang === 'en' ? ' (STEPS OF 100 G)' : ' (PAR PAS DE 100 G)') : ''}
+                  </div>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <div className="flex items-center justify-between border border-rose-200 rounded-2xl p-1.5 w-full sm:w-64 bg-white">
+                      <button
+                        type="button"
+                        onClick={decrement}
+                        disabled={selectedQty <= 1}
+                        className="w-11 h-11 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center disabled:opacity-40 cursor-pointer"
+                        aria-label="Diminuer la quantité"
+                        id="modal-qty-decrement"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <div className="flex items-baseline justify-center">
+                        <input
+                          type="number"
+                          min={1}
+                          max={availableStock}
+                          value={qtyInputValue}
+                          onChange={handleQtyChange}
+                          onBlur={handleBlur}
+                          className="w-16 text-center text-xl font-extrabold text-slate-900 bg-transparent focus:outline-hidden"
+                          id="modal-qty-input"
+                        />
+                        <span className="text-sm font-bold text-slate-500">{isExtrait ? 'g' : 'u'}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={increment}
+                        disabled={selectedQty >= availableStock}
+                        className="w-11 h-11 rounded-xl bg-[#9f0e4e] text-white flex items-center justify-center disabled:opacity-40 cursor-pointer"
+                        aria-label="Augmenter la quantité"
+                        id="modal-qty-increment"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {isExtrait &&
+                      [200, 500].map((add) => (
+                        <button
+                          key={add}
+                          type="button"
+                          disabled={selectedQty + add > availableStock}
+                          onClick={() => {
+                            const q = Math.min(availableStock, selectedQty + add);
+                            setSelectedQty(q);
+                            setQtyInputValue(String(q));
+                          }}
+                          className="px-3 py-2.5 rounded-xl border border-rose-200 text-xs font-bold text-slate-600 hover:border-[#9f0e4e] disabled:opacity-40 cursor-pointer"
+                        >
+                          +{add} g
+                        </button>
+                      ))}
                   </div>
                 </div>
               )}
 
               {nudge && !isOutOfStock && !isAllInCart && (
-                <div className="mb-2.5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] sm:text-xs text-emerald-900">
+                <div className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs sm:text-[13px] text-emerald-900">
                   <span aria-hidden="true">💡</span>
                   <span className="flex-1">
                     <strong>{lang === 'ar' ? 'نصيحة:' : lang === 'en' ? 'Tip:' : 'Conseil :'}</strong>{' '}
                     {lang === 'en'
-                      ? `add ${nudge.missing}${isExtrait ? 'g' : ''} to save ${formatDZD(nudge.savingDA)}.`
+                      ? `add ${nudge.missing}${isExtrait ? ' g' : ''} to save ${formatDZD(nudge.savingDA)}.`
                       : `ajoutez ${nudge.missing}${isExtrait ? ' g' : ''} pour économiser ${formatDZD(nudge.savingDA)}.`}
                   </span>
                   {availableStock >= nudge.minQty && (
@@ -655,7 +684,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                         setSelectedQty(nudge.minQty);
                         setQtyInputValue(String(nudge.minQty));
                       }}
-                      className="shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1 font-bold text-white cursor-pointer hover:bg-emerald-700"
+                      className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 font-bold text-white cursor-pointer hover:bg-emerald-700"
                     >
                       {lang === 'en' ? `Go to ${nudge.minQty}` : `Passer à ${nudge.minQty}`}
                     </button>
@@ -663,116 +692,65 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
               )}
 
-              {/* Quick Presets for Extrait */}
-              {isExtrait && !isOutOfStock && !isAllInCart && (
-                <div className="flex items-center gap-1.5 mb-2.5 text-xs overflow-x-auto pb-0.5">
-                  <span className="text-slate-500 font-semibold text-[11px] shrink-0">Presets :</span>
-                  {[100, 200, 300, 500].map((presetG) => {
-                    if (presetG > availableStock) return null;
-                    return (
-                      <button
-                        key={presetG}
-                        type="button"
-                        onClick={() => {
-                          setSelectedQty(presetG);
-                          setQtyInputValue(String(presetG));
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer shrink-0 ${
-                          selectedQty === presetG
-                            ? 'bg-[#9f0e4e] text-white border-[#70083b] shadow-xs'
-                            : 'bg-rose-50/60 text-slate-700 border-rose-200/80 hover:bg-rose-100/60'
-                        }`}
-                        id={`modal-preset-${presetG}g`}
-                      >
-                        {presetG}g
-                      </button>
-                    );
-                  })}
+              {localized.description && (
+                <div className="text-xs text-slate-600 leading-relaxed border-t border-rose-100 pt-3">
+                  <h4 className="font-bold text-slate-900 mb-1">
+                    {lang === 'ar' ? 'بطاقة المنتج الوصفية:' : lang === 'en' ? 'Product Description:' : 'Fiche Matière Première :'}
+                  </h4>
+                  <p>{localized.description}</p>
                 </div>
               )}
+            </div>
 
+            {/* Total + add to preorder (sticky on mobile) */}
+            <div className="sticky bottom-0 md:static shrink-0 bg-white md:bg-[#fdf6f8] border-t border-rose-100 md:border-0 md:m-8 md:mt-0 md:rounded-2xl p-4 md:p-4 space-y-2.5 shadow-[0_-6px_20px_rgba(112,8,59,0.08)] md:shadow-none">
+              {isPricesVisible && !isOutOfStock && (
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xs md:text-sm text-slate-600">
+                    {lang === 'en' ? 'Subtotal excl. tax' : 'Sous-total HT'}
+                    {isExtrait && <span className="text-slate-400"> · {selectedQty} g (~{containersCount} fl.)</span>}
+                  </span>
+                  <span className="text-xl md:text-2xl font-extrabold text-[#9f0e4e]">{formatDZD(calculatedTotalPrice)}</span>
+                </div>
+              )}
               {isOutOfStock ? (
                 <button
                   disabled
-                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 text-slate-400 font-bold text-xs cursor-not-allowed text-center border border-slate-200"
+                  className="w-full py-3 px-4 rounded-xl bg-slate-100 text-slate-400 font-bold text-sm cursor-not-allowed text-center border border-slate-200"
                   id="modal-out-of-stock-btn"
                 >
                   {t.outOfStock}
                 </button>
               ) : isAllInCart ? (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl py-2 px-3 text-center text-xs font-bold text-emerald-900">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl py-2.5 px-3 text-center text-xs font-bold text-emerald-900">
                   ✓ Tout le stock disponible est dans votre bon ({cartQuantity}{isExtrait ? 'g' : ''})
                 </div>
               ) : (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center border border-rose-200/90 rounded-xl bg-rose-50/40 p-1 shrink-0 shadow-inner">
-                      <button
-                        type="button"
-                        onClick={decrement}
-                        disabled={selectedQty <= 1}
-                        className="p-1.5 text-slate-600 hover:bg-rose-100/70 rounded-lg disabled:opacity-40 cursor-pointer min-w-[32px] min-h-[32px] flex items-center justify-center"
-                        aria-label="Diminuer la quantité"
-                        id="modal-qty-decrement"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-
-                      <div className="px-1.5 flex items-center">
-                        <input
-                          type="number"
-                          min={1}
-                          max={availableStock}
-                          value={qtyInputValue}
-                          onChange={handleQtyChange}
-                          onBlur={handleBlur}
-                          className="w-12 sm:w-14 text-center text-xs font-bold text-slate-900 bg-transparent focus:outline-hidden"
-                          id="modal-qty-input"
-                        />
-                        <span className="text-[11px] text-[#880e4f] font-bold">{isExtrait ? 'g' : 'u'}</span>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={increment}
-                        disabled={selectedQty >= availableStock}
-                        className="p-1.5 text-slate-600 hover:bg-rose-100/70 rounded-lg disabled:opacity-40 cursor-pointer min-w-[32px] min-h-[32px] flex items-center justify-center"
-                        aria-label="Augmenter la quantité"
-                        id="modal-qty-increment"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleAdd}
-                      className={`flex-1 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition shadow-md cursor-pointer ${
-                        cartQuantity > 0
-                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                          : 'bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 text-white'
-                      }`}
-                      id="modal-add-to-cart-btn"
-                    >
-                      {cartQuantity > 0 ? (
-                        <>
-                          <Check className="w-4 h-4 shrink-0" />
-                          <span className="truncate">✓ {t.addedToCart} (+{selectedQty}{isExtrait ? 'g' : ''})</span>
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="w-4 h-4 shrink-0" />
-                          <span className="truncate">{t.addToPreorder}</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-center gap-1 text-[10px] sm:text-[11px] text-slate-500 pt-0.5">
+                <>
+                  <button
+                    type="button"
+                    onClick={handleAdd}
+                    className={`w-full py-3.5 px-4 rounded-2xl font-extrabold text-sm md:text-[15px] flex items-center justify-center gap-2 transition shadow-md cursor-pointer text-white ${
+                      cartQuantity > 0
+                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                        : 'bg-gradient-to-r from-[#70083b] to-[#9f0e4e] hover:opacity-95'
+                    }`}
+                    id="modal-add-to-cart-btn"
+                  >
+                    {cartQuantity > 0 ? (
+                      <>
+                        <Check className="w-4 h-4 shrink-0" />
+                        <span className="truncate">✓ {t.addedToCart} (+{selectedQty}{isExtrait ? 'g' : ''})</span>
+                      </>
+                    ) : (
+                      <span className="truncate">{t.addToPreorder}</span>
+                    )}
+                  </button>
+                  <div className="flex items-center justify-center gap-1 text-[11px] text-slate-500">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <span className="truncate">Réservation sans avance • Paiement à la réception</span>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>
