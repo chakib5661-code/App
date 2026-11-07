@@ -530,6 +530,7 @@ export default function App() {
   const [isManageFavoritesOpen, setIsManageFavoritesOpen] = useState(false);
   const [genderFilter, setGenderFilter] = useState<GenderKey | 'all'>('all');
   const [brandFilter, setBrandFilter] = useState<string[]>([]);
+  const [styleFilter, setStyleFilter] = useState<string[]>([]);
   const [showOnlyClearance, setShowOnlyClearance] = useState(false);
 
   useEffect(() => {
@@ -1688,6 +1689,17 @@ export default function App() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [products]);
 
+  // Univers & style (Niche / Designer / Oriental-Arabe) counts, from the tags import
+  const styleCounts = useMemo(() => {
+    const c = { Niche: 0, Designer: 0, Arabic: 0 };
+    products.forEach((p) => {
+      if (p.isHidden) return;
+      const st = (p.style || '').trim();
+      if (st === 'Niche' || st === 'Designer' || st === 'Arabic') c[st] += 1;
+    });
+    return c;
+  }, [products]);
+
   const genderCounts = useMemo(() => {
     const c = { men: 0, women: 0, unisex: 0 };
     products.forEach((p) => {
@@ -1740,6 +1752,9 @@ export default function App() {
           if (g !== genderFilter && !(g === 'unisex' && genderFilter !== 'unisex')) return false;
         }
 
+        // Univers & style filter (multi-select)
+        if (styleFilter.length > 0 && !styleFilter.includes((p.style || '').trim())) return false;
+
         // Brand filter (multi-select)
         if (brandFilter.length > 0 && !brandFilter.includes((p.brand || '').trim())) return false;
 
@@ -1788,12 +1803,12 @@ export default function App() {
           }
         }
       });
-  }, [products, selectedFamily, stockFilter, deferredSearchQuery, sortOption, showOnlyFavorites, favorites, showOnlyTopSellers, genderFilter, brandFilter, showOnlyClearance]);
+  }, [products, selectedFamily, stockFilter, deferredSearchQuery, sortOption, showOnlyFavorites, favorites, showOnlyTopSellers, genderFilter, brandFilter, styleFilter, showOnlyClearance]);
 
   // Reset pagination to page 1 whenever search, family, or stock filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedFamily, searchQuery, stockFilter, sortOption, showOnlyFavorites, showOnlyTopSellers, genderFilter, brandFilter, showOnlyClearance]);
+  }, [selectedFamily, searchQuery, stockFilter, sortOption, showOnlyFavorites, showOnlyTopSellers, genderFilter, brandFilter, styleFilter, showOnlyClearance]);
 
   // Paginated Products (50 per page to optimize DOM rendering & browser scrolling)
   const productsPerPage = 50;
@@ -2266,6 +2281,7 @@ export default function App() {
     setShowOnlyTopSellers(false);
     setGenderFilter('all');
     setBrandFilter([]);
+    setStyleFilter([]);
     setShowOnlyClearance(false);
     setCurrentPage(1);
     if (typeof window !== 'undefined') {
@@ -3254,6 +3270,11 @@ export default function App() {
             genderCounts={genderCounts}
             brandOptions={brandOptions}
             selectedBrands={brandFilter}
+          styleCounts={styleCounts}
+          selectedStyles={styleFilter}
+          onToggleStyle={(st) =>
+            setStyleFilter((prev) => (prev.includes(st) ? prev.filter((x) => x !== st) : [...prev, st]))
+          }
             onToggleBrand={(b) =>
               setBrandFilter((prev) => (prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]))
             }
@@ -3290,6 +3311,11 @@ export default function App() {
           genderCounts={genderCounts}
           brandOptions={brandOptions}
           selectedBrands={brandFilter}
+          styleCounts={styleCounts}
+          selectedStyles={styleFilter}
+          onToggleStyle={(st) =>
+            setStyleFilter((prev) => (prev.includes(st) ? prev.filter((x) => x !== st) : [...prev, st]))
+          }
           onToggleBrand={(b) =>
             setBrandFilter((prev) => (prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]))
           }

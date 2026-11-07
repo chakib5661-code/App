@@ -41,6 +41,10 @@ interface ProductFilterProps {
   clearanceCount?: number;
   /** 'sidebar' renders the full filter panel inline (desktop left column); default is the top bar. */
   variant?: 'bar' | 'sidebar';
+  // Univers & style (Niche / Designer / Arabic)
+  styleCounts?: { Niche: number; Designer: number; Arabic: number };
+  selectedStyles?: string[];
+  onToggleStyle?: (style: string) => void;
 }
 
 const tabBase =
@@ -79,6 +83,9 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
   onToggleOnlyClearance,
   clearanceCount = 0,
   variant = 'bar',
+  styleCounts = { Niche: 0, Designer: 0, Arabic: 0 },
+  selectedStyles = [],
+  onToggleStyle,
 }) => {
   const t = translations[lang];
   const L = (fr: string, en: string, ar: string) => (lang === 'ar' ? ar : lang === 'en' ? en : fr);
@@ -98,11 +105,13 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
     showOnlyTopSellers ||
     showOnlyClearance ||
     genderFilter !== 'all' ||
+    selectedStyles.length > 0 ||
     selectedBrands.length > 0;
 
   // Filters that live inside the sheet only (shown as a badge on the button)
   const sheetBadge =
     selectedBrands.length +
+    selectedStyles.length +
     (sortOption !== 'default' ? 1 : 0) +
     (stockFilter !== 'all' ? 1 : 0) +
     (selectedFamily !== 'all' ? 1 : 0) +
@@ -154,6 +163,13 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
     },
   ];
 
+  const styleOptions = [
+    { key: 'Niche', label: 'Niche', count: styleCounts.Niche },
+    { key: 'Designer', label: 'Designer', count: styleCounts.Designer },
+    { key: 'Arabic', label: L('Oriental / Arabe', 'Oriental / Arabic', 'شرقي / عربي'), count: styleCounts.Arabic },
+  ];
+  const hasStyles = !!onToggleStyle && styleOptions.some((o) => o.count > 0);
+
   const chip = (on: boolean) =>
     `px-3 py-2 rounded-full border text-xs font-bold transition cursor-pointer ${
       on ? 'bg-[#9f0e4e] text-white border-[#9f0e4e]' : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300'
@@ -163,6 +179,19 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
 
   const sections = (
     <>
+          {hasStyles && (
+            <section>
+              <div className={sectionTitle}>{L('Univers et style', 'Universe and style', 'العالم والأسلوب')}</div>
+              <div className="flex flex-wrap gap-2">
+                {styleOptions.map((o) => (
+                  <button key={o.key} type="button" onClick={() => onToggleStyle?.(o.key)} className={chip(selectedStyles.includes(o.key))}>
+                    {o.label} <span className="opacity-70">({o.count})</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           {hasGenderData && (
             <section>
               <div className={sectionTitle}>{L('Genre', 'Gender', 'الجنس')}</div>
@@ -318,6 +347,9 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
 
   // Removable chips for the filters applied from inside the sheet
   const activeChips: { key: string; label: string; onRemove: () => void }[] = [];
+  selectedStyles.forEach((st) =>
+    activeChips.push({ key: `s-${st}`, label: styleOptions.find((o) => o.key === st)?.label || st, onRemove: () => onToggleStyle?.(st) }),
+  );
   selectedBrands.forEach((b) => activeChips.push({ key: `b-${b}`, label: b, onRemove: () => onToggleBrand?.(b) }));
   if (genderFilter !== 'all' && onSelectGender)
     activeChips.push({ key: 'g', label: genderLabel(genderFilter), onRemove: () => onSelectGender('all') });
@@ -375,6 +407,31 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
             )}
           </div>
         </section>
+
+        {hasStyles && (
+          <>
+            {divider}
+            <section>
+              <div className={heading}>{L('Univers et style', 'Universe and style', 'العالم والأسلوب')}</div>
+              <div className="grid grid-cols-2 gap-2">
+                {styleOptions.map((o) => {
+                  const on = selectedStyles.includes(o.key);
+                  return (
+                    <label
+                      key={o.key}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold cursor-pointer transition ${
+                        on ? 'border-[#9f0e4e] bg-rose-50 text-[#9f0e4e]' : 'border-rose-100 bg-rose-50/40 text-slate-800 hover:border-rose-300'
+                      }`}
+                    >
+                      <input type="checkbox" className="w-4 h-4 accent-[#9f0e4e] shrink-0" checked={on} onChange={() => onToggleStyle?.(o.key)} />
+                      <span className="truncate">{o.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        )}
 
         {hasGenderData && (
           <>
