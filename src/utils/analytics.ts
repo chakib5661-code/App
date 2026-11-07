@@ -63,24 +63,7 @@ export function getEnvAnalyticsConfig(): { gaMeasurementId: string; clarityProje
     else if (envObj.CLARITY_PROJECT_ID) clarity = String(envObj.CLARITY_PROJECT_ID).trim();
   }
 
-  // Priority 2: Vite import.meta.env (client-side build or dev server)
-  if (!ga && typeof import.meta !== 'undefined' && import.meta.env) {
-    if (import.meta.env.VITE_GA_MEASUREMENT_ID) {
-      ga = String(import.meta.env.VITE_GA_MEASUREMENT_ID).trim();
-    } else if ((import.meta.env as any).GA_MEASUREMENT_ID) {
-      ga = String((import.meta.env as any).GA_MEASUREMENT_ID).trim();
-    }
-  }
-
-  if (!clarity && typeof import.meta !== 'undefined' && import.meta.env) {
-    if (import.meta.env.VITE_CLARITY_PROJECT_ID) {
-      clarity = String(import.meta.env.VITE_CLARITY_PROJECT_ID).trim();
-    } else if ((import.meta.env as any).CLARITY_PROJECT_ID) {
-      clarity = String((import.meta.env as any).CLARITY_PROJECT_ID).trim();
-    }
-  }
-
-  // Priority 3: Fallback process.env if available
+  // Priority 2: process.env values inlined at build time by next.config.mjs
   if (!ga && typeof process !== 'undefined' && process.env) {
     if (process.env.VITE_GA_MEASUREMENT_ID) ga = String(process.env.VITE_GA_MEASUREMENT_ID).trim();
     else if (process.env.GA_MEASUREMENT_ID) ga = String(process.env.GA_MEASUREMENT_ID).trim();

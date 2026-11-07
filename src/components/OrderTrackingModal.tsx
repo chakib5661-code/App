@@ -28,6 +28,9 @@ interface OrderTrackingModalProps {
   currentCustomer: CustomerUser | null;
   storeSettings: StoreSettings;
   lang: AppLanguage;
+  onReorder?: (order: PreOrder) => void;
+  onAddToOrder?: (order: PreOrder) => void;
+  canAddToOrder?: (order: PreOrder) => boolean;
 }
 
 function normalizePhoneDigits(phone?: string): string {
@@ -44,6 +47,9 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   currentCustomer,
   storeSettings,
   lang,
+  onReorder,
+  onAddToOrder,
+  canAddToOrder,
 }) => {
   const t = translations[lang];
   const [searchInput, setSearchInput] = useState('');
@@ -479,6 +485,34 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                   </div>
 
                   {/* Actions */}
+                  {currentCustomer && !activeOrderToDisplay.isProforma && (onReorder || (onAddToOrder && canAddToOrder?.(activeOrderToDisplay))) && (
+                    <div className="flex flex-col sm:flex-row items-center gap-2 pt-2 border-t border-slate-800">
+                      {onReorder && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onReorder(activeOrderToDisplay);
+                            onClose();
+                          }}
+                          className="w-full sm:flex-1 py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 transition shadow-md cursor-pointer"
+                        >
+                          <span>🔁 {lang === 'ar' ? 'إعادة نفس الطلب' : 'Commander à nouveau'}</span>
+                        </button>
+                      )}
+                      {onAddToOrder && canAddToOrder?.(activeOrderToDisplay) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onAddToOrder(activeOrderToDisplay);
+                            onClose();
+                          }}
+                          className="w-full sm:flex-1 py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/25 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+                        >
+                          <span>➕ {lang === 'ar' ? 'إضافة إلى هذه الطلبية' : 'Ajouter à cette commande'}</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <div className="flex flex-col sm:flex-row items-center gap-2 pt-2 border-t border-slate-800">
                     <button
                       type="button"

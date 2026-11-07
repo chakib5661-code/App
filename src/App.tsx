@@ -3,7 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue, Suspense } from 'react';
+import { rememberTags, applyStoredTags } from './utils/productTags';
+import { RewardLadder } from './components/RewardLadder';
+import { enablePush, getPushStatus, fetchPushPrefs, savePushPrefs } from './utils/push';
+import type { PushStatus } from './components/AccountMenu';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue, startTransition, Suspense } from 'react';
 import {
   Sparkles,
   Layers,
@@ -24,8 +28,11 @@ import {
   Globe,
   RotateCcw,
   X,
+  Star,
 } from 'lucide-react';
-import { Product, ProductFamily, CartItem, CustomerDetails, PreOrder, StoreSettings, CustomerApplication, CustomerUser, CustomerAccountStatus, AdBanner, SavedPreorder } from './types';
+import { Product, ProductFamily, CartItem, CustomerDetails, PreOrder, StoreSettings, CustomerApplication, CustomerUser, CustomerAccountStatus, AdBanner, SavedPreorder, OffersConfig } from './types';
+import { computeCart, normalizeOffers } from './utils/offers';
+import { PacksHeader } from './components/PacksHeader';
 import { INITIAL_PRODUCTS, INITIAL_STORE_SETTINGS } from './data/initialProducts';
 import { INITIAL_CUSTOMER_APPLICATIONS, INITIAL_AD_BANNERS } from './data/initialCustomerData';
 import { Header } from './components/Header';
@@ -33,12 +40,18 @@ import { ProductCard } from './components/ProductCard';
 import { ProductFilter, StockFilterType, SortOption } from './components/ProductFilter';
 import { CartDrawer } from './components/CartDrawer';
 import { QuickOrderView } from './components/QuickOrderView';
+import { ScrollToTopButton } from './components/ScrollToTopButton';
 import { ProductSkeletonGrid } from './components/ProductSkeletonGrid';
 import { StickyBottomOrderBar } from './components/StickyBottomOrderBar';
+import { ClearanceBanner } from './components/ClearanceBanner';
+import { ManageFavoritesModal } from './components/ManageFavoritesModal';
+import { MyInvoicesModal } from './components/MyInvoicesModal';
+import { MobileMenuSheet } from './components/MobileMenuSheet';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppLanguage } from './translations';
 import { formatDZD } from './utils/formatDZD';
 import { trackCustomEvent, applyServerAnalyticsConfig } from './utils/analytics';
-import { isProductTopSeller, calculateDiscountedPrice } from './utils/productUtils';
+import { isProductTopSeller, calculateDiscountedPrice, normalizeGender, GenderKey } from './utils/productUtils';
 import { detectUserDevice, DeviceInfo } from './utils/deviceDetector';
 
 // Code-split heavy modals and administration tools to slash initial bundle size and boost Core Web Vitals (LCP, INP, CLS)
@@ -78,6 +91,13 @@ import {
   createSingleProductOnServer,
   saveSingleProductOnServer,
   bulkDeleteOrdersOnServer,
+  fetchOffers,
+  fetchMyOrders,
+  fetchMyFavorites,
+  saveMyFavorites,
+  addItemsToOrderOnServer,
+  saveCartOnServer,
+  type MyOrdersResponse,
 } from './utils/api';
 import { playOrderNotificationSound, playAccessNotificationSound } from './utils/audioAlert';
 import { subscribeToSupabaseRealtime, triggerAutoSyncToSupabase } from './utils/supabaseClient';
@@ -324,7 +344,16 @@ export default function App() {
   });
 
   // 4. Modal Controls & Admin Mode
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminMode, setIsAdminModeRaw] = useState<boolean>(() => {
+    try { return localStorage.getItem('tulip_admin_mode_v1') === '1'; } catch { return false; }
+  });
+  const setIsAdminMode = (v: boolean | ((p: boolean) => boolean)) => {
+    setIsAdminModeRaw((prev) => {
+      const next = typeof v === 'function' ? (v as (p: boolean) => boolean)(prev) : v;
+      try { next ? localStorage.setItem('tulip_admin_mode_v1', '1') : localStorage.removeItem('tulip_admin_mode_v1'); } catch {}
+      return next;
+    });
+  };
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
 
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -367,6 +396,7 @@ export default function App() {
   });
 
   // Keep a reference to currentCustomer to prevent infinite re-render loops during background sync
+  const missingCustomerSyncsRef = useRef(0);
   const currentCustomerRef = useRef<CustomerUser | null>(currentCustomer);
   useEffect(() => {
     currentCustomerRef.current = currentCustomer;
@@ -377,6 +407,38 @@ export default function App() {
 
   // Strict Rule: Prices are ONLY visible if a verified customer is logged in!
   const isPricesVisible = Boolean(currentCustomer && currentCustomer.status === 'approved');
+
+  // Offers & rules (controlled from the admin "Offres" section)
+  const [offers, setOffers] = useState<OffersConfig>(() => normalizeOffers(null));
+  const [popularCounts, setPopularCounts] = useState<Record<string, number>>({});
+  const [myInsights, setMyInsights] = useState<MyOrdersResponse | null>(null);
+  const [amendOrder, setAmendOrder] = useState<PreOrder | null>(null);
+  const loyaltyTier = myInsights?.loyalty?.tier || null;
+  const [pushStatus, setPushStatus] = useState<PushStatus>('unsupported');
+  const [marketingPush, setMarketingPush] = useState(true);
+  useEffect(() => {
+    if (!currentCustomer) return;
+    getPushStatus().then(setPushStatus).catch(() => {});
+    fetchPushPrefs(currentCustomer.id).then((p) => setMarketingPush(p.marketing));
+  }, [currentCustomer?.id]);
+  // Opened from a push notification: ?track=1 order tracking, ?cart=1 the cart, ?reorder=1 last order into the cart
+  useEffect(() => {
+    if (!currentCustomer) return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('track') === '1') setIsOrderTrackingOpen(true);
+    else if (q.get('cart') === '1') setIsCartOpen(true);
+    else if (q.get('reorder') === '1' && !q.has('done')) pendingReorderRef.current = true;
+    else return;
+    window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+  }, [currentCustomer?.id]);
+  const pendingReorderRef = useRef(false);
+  useEffect(() => {
+    if (!pendingReorderRef.current || !myInsights) return;
+    pendingReorderRef.current = false;
+    const last = myInsights.orders.filter((o) => !o.isProforma && o.status !== 'annulee')[0];
+    if (last) handleReorder(last);
+    else setIsCartOpen(true);
+  }, [myInsights]);
 
   // 6. Advertising Popup State
   const [adBanners, setAdBanners] = useState<AdBanner[]>([]);
@@ -441,6 +503,8 @@ export default function App() {
 
   const [isInterfaceChoiceOpen, setIsInterfaceChoiceOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isInvoicesOpen, setIsInvoicesOpen] = useState(false);
 
   const handleConfirmLanguageSelection = (lang: AppLanguage) => {
     handleSelectLanguage(lang);
@@ -463,6 +527,10 @@ export default function App() {
   });
 
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
+  const [isManageFavoritesOpen, setIsManageFavoritesOpen] = useState(false);
+  const [genderFilter, setGenderFilter] = useState<GenderKey | 'all'>('all');
+  const [brandFilter, setBrandFilter] = useState<string[]>([]);
+  const [showOnlyClearance, setShowOnlyClearance] = useState(false);
 
   useEffect(() => {
     try {
@@ -471,6 +539,33 @@ export default function App() {
       console.error(e);
     }
   }, [favorites]);
+
+  // Sync favorites with the customer account: on login merge server + local, afterwards save changes.
+  const favoritesSyncedFor = useRef<string | null>(null);
+  const customerIdForFavs = currentCustomer?.id || null;
+  useEffect(() => {
+    if (!customerIdForFavs) {
+      favoritesSyncedFor.current = null;
+      return;
+    }
+    let cancelled = false;
+    fetchMyFavorites(customerIdForFavs).then((server) => {
+      if (cancelled || !server) return;
+      setFavorites((local) => {
+        const merged = Array.from(new Set([...server, ...local]));
+        return merged.length === local.length && merged.every((id, i) => id === local[i]) ? local : merged;
+      });
+      favoritesSyncedFor.current = customerIdForFavs;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [customerIdForFavs]);
+  useEffect(() => {
+    if (customerIdForFavs && favoritesSyncedFor.current === customerIdForFavs) {
+      void saveMyFavorites(customerIdForFavs, favorites);
+    }
+  }, [favorites, customerIdForFavs]);
 
   const handleToggleFavorite = useCallback((productId: string) => {
     setFavorites((prev) => {
@@ -522,6 +617,9 @@ export default function App() {
     sortOption,
     showOnlyFavorites,
     showOnlyTopSellers,
+    genderFilter,
+    brandFilter,
+    showOnlyClearance,
   ]);
 
   // 2. Mobile Navigation: Handle phone "Return / Back" button and prevent accidental tab close
@@ -749,8 +847,15 @@ export default function App() {
     }
   }, []);
 
+  // The switch re-renders a long list; show the tap instantly, render in the background, ignore repeated taps
+  const [pendingInterface, setPendingInterface] = useState<'showroom' | 'quick' | null>(null);
+  useEffect(() => {
+    if (pendingInterface && currentInterface === pendingInterface) setPendingInterface(null);
+  }, [currentInterface, pendingInterface]);
   const handleSelectInterface = (mode: 'showroom' | 'quick') => {
-    setCurrentInterface(mode);
+    if (mode === currentInterface || pendingInterface) return;
+    setPendingInterface(mode);
+    startTransition(() => setCurrentInterface(mode));
     try {
       localStorage.setItem(STORAGE_KEYS.INTERFACE_MODE, mode);
       localStorage.setItem(STORAGE_KEYS.INTERFACE_CHOSEN, 'true');
@@ -1139,9 +1244,12 @@ export default function App() {
               ) {
                 setCurrentCustomer(updated);
               }
-            } else {
-              // Account removed or purged -> log out cleanly
-              setCurrentCustomer(null);
+              missingCustomerSyncsRef.current = 0;
+            } else if (data.customerUsers.length > 0) {
+              // Only log out if the account is missing from several consecutive syncs
+              // (a single stale/partial server response must not drop the session).
+              missingCustomerSyncsRef.current += 1;
+              if (missingCustomerSyncsRef.current >= 3) setCurrentCustomer(null);
             }
           }
         }
@@ -1567,6 +1675,48 @@ export default function App() {
     return products.filter((p) => !p.isHidden && isProductTopSeller(p)).length;
   }, [products]);
 
+  // Brand options (with counts) and per-gender counts for the filter UI
+  const brandOptions = useMemo(() => {
+    const m = new Map<string, number>();
+    products.forEach((p) => {
+      if (p.isHidden) return;
+      const b = (p.brand || '').trim();
+      if (b) m.set(b, (m.get(b) || 0) + 1);
+    });
+    return Array.from(m.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [products]);
+
+  const genderCounts = useMemo(() => {
+    const c = { men: 0, women: 0, unisex: 0 };
+    products.forEach((p) => {
+      if (p.isHidden) return;
+      const g = normalizeGender(p.gender);
+      if (g) c[g] += 1;
+    });
+    return c;
+  }, [products]);
+
+  const clearanceCount = useMemo(
+    () => products.filter((p) => !p.isHidden && (p.clearance || (p.discountPercent || 0) > 0)).length,
+    [products]
+  );
+
+  // Best discount and earliest end date among sale/clearance products (for the banner)
+  const clearanceInfo = useMemo(() => {
+    let maxDiscount = 0;
+    let endsAt: string | null = null;
+    const now = Date.now();
+    products.forEach((p) => {
+      if (p.isHidden || !(p.clearance || (p.discountPercent || 0) > 0)) return;
+      maxDiscount = Math.max(maxDiscount, p.discountPercent || 0);
+      const u = p.clearance?.until;
+      if (u && new Date(u).getTime() > now && (!endsAt || new Date(u) < new Date(endsAt))) endsAt = u;
+    });
+    return { maxDiscount, endsAt };
+  }, [products]);
+
   // Filtered & Sorted Products
   const filteredProducts = useMemo(() => {
     return products
@@ -1583,6 +1733,19 @@ export default function App() {
         // Family filter
         if (selectedFamily !== 'all' && p.family !== selectedFamily) return false;
 
+        // Gender filter
+        if (genderFilter !== 'all') {
+          const g = normalizeGender(p.gender);
+          // Unisex perfumes are shown under both Men and Women
+          if (g !== genderFilter && !(g === 'unisex' && genderFilter !== 'unisex')) return false;
+        }
+
+        // Brand filter (multi-select)
+        if (brandFilter.length > 0 && !brandFilter.includes((p.brand || '').trim())) return false;
+
+        // Clearance / sale filter
+        if (showOnlyClearance && !(p.clearance || (p.discountPercent || 0) > 0)) return false;
+
         // Stock filter
         if (stockFilter === 'in_stock' && p.stock <= 0) return false;
         if (stockFilter === 'low_stock' && (p.stock <= 0 || p.stock > (p.minAlertStock || 5))) return false;
@@ -1596,7 +1759,8 @@ export default function App() {
           const matchCategory = (p.category || '').toLowerCase().includes(q);
           const matchUnit = (p.unit || '').toLowerCase().includes(q);
           const matchOrigin = (p.origin || '').toLowerCase().includes(q);
-          if (!matchCode && !matchName && !matchCategory && !matchUnit && !matchOrigin) {
+          const matchBrand = (p.brand || '').toLowerCase().includes(q);
+          if (!matchCode && !matchName && !matchCategory && !matchUnit && !matchOrigin && !matchBrand) {
             return false;
           }
         }
@@ -1624,12 +1788,12 @@ export default function App() {
           }
         }
       });
-  }, [products, selectedFamily, stockFilter, deferredSearchQuery, sortOption, showOnlyFavorites, favorites, showOnlyTopSellers]);
+  }, [products, selectedFamily, stockFilter, deferredSearchQuery, sortOption, showOnlyFavorites, favorites, showOnlyTopSellers, genderFilter, brandFilter, showOnlyClearance]);
 
   // Reset pagination to page 1 whenever search, family, or stock filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedFamily, searchQuery, stockFilter, sortOption, showOnlyFavorites, showOnlyTopSellers]);
+  }, [selectedFamily, searchQuery, stockFilter, sortOption, showOnlyFavorites, showOnlyTopSellers, genderFilter, brandFilter, showOnlyClearance]);
 
   // Paginated Products (50 per page to optimize DOM rendering & browser scrolling)
   const productsPerPage = 50;
@@ -1642,19 +1806,64 @@ export default function App() {
 
   // Cart operations
   const cartCount = useMemo(() => cart.reduce((s, i) => s + (i?.quantity || 0), 0), [cart]);
-  const cartTotalDA = useMemo(
-    () =>
-      cart.reduce((s, i) => {
-        const p = i?.product;
-        if (!p) return s;
-        const unitPrice = calculateDiscountedPrice(p.priceDA, p.discountPercent);
-        return s + unitPrice * (i?.quantity || 0);
-      }, 0),
-    [cart]
+  const cartCalc = useMemo(
+    () => computeCart(cart.filter((i) => i && i.product), offers, loyaltyTier),
+    [cart, offers, loyaltyTier]
   );
+  const cartTotalDA = cartCalc.totalDA;
+
+  // Load offers config (and anonymous popularity counts); refresh when the tab regains focus
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetchOffers().then((r) => {
+        if (alive && r) {
+          setOffers(normalizeOffers(r.offers));
+          setPopularCounts(r.popular || {});
+        }
+      });
+    load();
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      alive = false;
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  // Customer history, loyalty tier and usual products
+  const refreshMyInsights = React.useCallback(() => {
+    if (currentCustomer && currentCustomer.status === 'approved') {
+      fetchMyOrders(currentCustomer.id, currentCustomer.username).then((r) => setMyInsights(r));
+    } else {
+      setMyInsights(null);
+    }
+  }, [currentCustomer]);
+  useEffect(() => {
+    refreshMyInsights();
+  }, [refreshMyInsights]);
+
+  // Keep a server copy of a logged-in customer's cart so the sales team can follow up on abandoned carts
+  useEffect(() => {
+    if (!currentCustomer || currentCustomer.status !== 'approved' || !offers.reminders.enabled) return;
+    const timer = setTimeout(() => {
+      saveCartOnServer({
+        customerId: currentCustomer.id,
+        customerName: currentCustomer.fullName,
+        companyName: currentCustomer.companyName,
+        phone: currentCustomer.phone,
+        items: cart
+          .filter((i) => i && i.product && i.quantity > 0)
+          .map((i) => ({ productId: i.product.id, name: i.product.name, quantity: i.quantity })),
+        totalDA: cartTotalDA,
+      });
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [cart, currentCustomer, offers.reminders.enabled, cartTotalDA]);
 
   const handleAddToCart = (product: Product, quantityToAdd: number) => {
     if (!product || !product.id) return;
+    trackCustomEvent('add_to_cart', 'ecommerce', product.code, quantityToAdd, { family: product.family });
     setCart((prev) => {
       const existing = prev.find((item) => item?.product?.id === product.id);
       if (existing) {
@@ -1706,6 +1915,59 @@ export default function App() {
     setCart([]);
   };
 
+  // Reorder a past order: add every line again at its previous quantity (capped by current stock)
+  const handleReorder = (order: PreOrder) => {
+    let added = 0;
+    let skipped = 0;
+    order.items.forEach((it) => {
+      const prod = products.find((p) => p.id === it.productId || p.code === it.code);
+      if (prod && prod.stock > 0 && !prod.isHidden) {
+        handleAddToCart(prod, Math.min(prod.stock, it.quantity));
+        added++;
+      } else {
+        skipped++;
+      }
+    });
+    setSyncToastMessage(
+      currentLang === 'ar'
+        ? `تمت إضافة ${added} منتج إلى السلة${skipped ? ` (${skipped} غير متوفر)` : ''}`
+        : `${added} référence(s) ajoutée(s) au panier${skipped ? ` (${skipped} indisponible(s))` : ''}`
+    );
+    setTimeout(() => setSyncToastMessage(null), 4500);
+    setIsCartOpen(true);
+  };
+
+  const canAddToOrder = (order: PreOrder): boolean => {
+    if (!offers.addToOrder.enabled || !currentCustomer || order.customerId !== currentCustomer.id) return false;
+    if (order.isProforma || (order.status !== 'en_attente' && order.status !== 'confirmee')) return false;
+    const age = Date.now() - new Date(order.createdAt || order.date).getTime();
+    return age <= offers.addToOrder.windowHours * 3600 * 1000;
+  };
+
+  const handleSendAmendment = async () => {
+    if (!amendOrder || !currentCustomer || cart.length === 0) return;
+    const res = await addItemsToOrderOnServer(
+      amendOrder.id,
+      currentCustomer.id,
+      cart.map((i) => ({ productId: i.product.id, quantity: i.quantity }))
+    );
+    if (res.success && res.order) {
+      setOrders((prev) => [res.order!, ...prev.filter((o) => o.id !== res.order!.id)]);
+      if (res.updatedProducts && res.updatedProducts.length > 0) setProducts(res.updatedProducts);
+      setCart([]);
+      setAmendOrder(null);
+      refreshMyInsights();
+      setSyncToastMessage(
+        currentLang === 'ar'
+          ? `تمت إضافة المنتجات إلى الطلبية ${res.order.orderNumber}`
+          : `Articles ajoutés à la commande ${res.order.orderNumber}. Nouveau total : ${Math.round(res.order.totalDA)} DA`
+      );
+    } else {
+      setSyncToastMessage(res.error || "Impossible d'ajouter à la commande.");
+    }
+    setTimeout(() => setSyncToastMessage(null), 6000);
+  };
+
   // Checkout & Proforma flow
   const handleOpenCheckout = () => {
     setIsCartOpen(false);
@@ -1725,16 +1987,32 @@ export default function App() {
     const prefix = isProforma ? 'PRO' : 'PRE';
     const orderNumber = `${prefix}-${new Date().getFullYear()}-${timestamp.toString().slice(-5)}`;
 
-    const orderItems = cart.map((item) => ({
-      productId: item.product.id,
-      code: item.product.code,
-      name: item.product.name,
-      family: item.product.family,
-      unit: item.product.unit,
-      priceDA: item.product.priceDA,
-      quantity: item.quantity,
-      totalDA: item.product.priceDA * item.quantity,
-    }));
+    // Minimum order amount (applies to real pre-orders, not proforma requests)
+    if (!isProforma && !cartCalc.minOrderMet) {
+      setSyncToastMessage(
+        currentLang === 'ar'
+          ? `الحد الأدنى للطلب هو ${Math.round(cartCalc.minOrderDA)} د.ج`
+          : `Montant minimum de commande : ${Math.round(cartCalc.minOrderDA)} DA`
+      );
+      setTimeout(() => setSyncToastMessage(null), 5000);
+      return;
+    }
+
+    const orderItems = cart.map((item) => {
+      const line = cartCalc.lines.find((l) => l.productId === item.product.id);
+      return {
+        productId: item.product.id,
+        code: item.product.code,
+        name: item.product.name,
+        family: item.product.family,
+        unit: item.product.unit,
+        priceDA: line ? line.unitPriceDA : item.product.priceDA,
+        listPriceDA: item.product.priceDA,
+        quantity: item.quantity,
+        totalDA: line ? line.lineTotalDA : item.product.priceDA * item.quantity,
+      };
+    });
+    trackCustomEvent('purchase', 'ecommerce', orderNumber, cartTotalDA, { items: cart.length, proforma: isProforma });
 
     const isCurrentlyOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
@@ -1747,6 +2025,10 @@ export default function App() {
       customer,
       items: orderItems,
       totalDA: cartTotalDA,
+      subtotalDA: cartCalc.subtotalDA,
+      discountDA: cartCalc.discountDA,
+      appliedOffers: cartCalc.appliedOffers,
+      loyaltyTier: cartCalc.loyaltyTier?.name,
       status: 'en_attente',
       isProforma,
       isOfflinePending: !isCurrentlyOnline,
@@ -1821,6 +2103,13 @@ export default function App() {
           if (res.updatedProducts && Array.isArray(res.updatedProducts) && res.updatedProducts.length > 0) {
             setProducts(res.updatedProducts);
           }
+          refreshMyInsights();
+        } else if (res.error && res.error.startsWith('Montant minimum')) {
+          // Rejected by the minimum-order rule: do not retry from the offline queue
+          setOrders((prev) => prev.filter((o) => o.id !== newOrder.id));
+          setIsConfirmationOpen(false);
+          setSyncToastMessage(res.error);
+          setTimeout(() => setSyncToastMessage(null), 6000);
         } else {
           // If server failed, buffer in offline queue so order is never lost
           enqueueOfflineOrder(newOrder);
@@ -1854,14 +2143,21 @@ export default function App() {
   };
 
   // Stock synchronization from Excel
-  const handleApplyExcelInventory = (newProducts: Product[]) => {
+  const handleApplyExcelInventory = (importedProducts: Product[]) => {
+    // Remember tags already on the catalogue, then re-apply them so the
+    // "Filtres Extraits" file never has to be re-uploaded after a stock import.
+    rememberTags(products);
+    const newProducts = applyStoredTags(importedProducts);
     setProducts(newProducts);
     const now = new Date().toISOString();
     setLastStockSyncDate(now);
     safeSetStorageItem(STORAGE_KEYS.LAST_SYNC, now);
 
     // Persist to server
-    syncProductsOnServer(newProducts).catch((err) => console.warn('Sync products error:', err));
+    // The server re-applies the tags stored in the database; adopt its result
+    syncProductsOnServer(newProducts)
+      .then((saved) => { if (Array.isArray(saved) && saved.length) setProducts(saved); })
+      .catch((err) => console.warn('Sync products error:', err));
 
     // Sync cart with new stock limits
     setCart((prevCart) => {
@@ -1968,6 +2264,9 @@ export default function App() {
     setSortOption('default');
     setShowOnlyFavorites(false);
     setShowOnlyTopSellers(false);
+    setGenderFilter('all');
+    setBrandFilter([]);
+    setShowOnlyClearance(false);
     setCurrentPage(1);
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2459,6 +2758,18 @@ export default function App() {
   };
 
   // IF ADMIN VIEW: RENDER FULL ADMIN PORTAL PAGE
+  // Customer's own invoices, newest first (cancelled orders excluded)
+  const myInvoices = currentCustomer
+    ? (myInsights ? myInsights.orders : orders)
+        .filter((o) => o.customerId === currentCustomer.id || o.customerUsername === currentCustomer.username)
+        .filter((o) => o.status !== 'annulee')
+        .sort((a, b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime())
+    : [];
+  const handleDownloadInvoice = async (order: PreOrder) => {
+    const { downloadOrderPDF } = await import('./utils/pdfGenerator');
+    await downloadOrderPDF(order, storeSettings, { hidePrices: !isPricesVisible });
+  };
+
   if (currentView === 'admin') {
     return (
       <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white font-bold text-sm">Chargement de l'administration Tulip...</div>}>
@@ -2475,6 +2786,7 @@ export default function App() {
             window.location.hash = '';
           }}
           onUpdateProducts={(updated) => {
+            rememberTags(updated);
             lastMutationTimeRef.current = Date.now();
             setProducts(updated);
             syncProductsOnServer(updated).catch(console.warn);
@@ -2542,6 +2854,25 @@ export default function App() {
         lang={currentLang}
         onSelectLanguage={handleSelectLanguage}
         onOpenOrderTracking={currentCustomer ? () => setIsOrderTrackingOpen(true) : undefined}
+        loyaltyTier={loyaltyTier}
+        nextLoyaltyTier={myInsights?.loyalty?.nextTier || null}
+        loyaltySpendDA={myInsights?.loyalty?.spendDA || 0}
+        spendStats={myInsights?.stats || null}
+        loyaltyWindowDays={myInsights?.loyalty?.windowDays || offers.loyalty.windowDays}
+        pushStatus={pushStatus}
+        marketingPush={marketingPush}
+        onToggleMarketing={(v) => {
+          setMarketingPush(v);
+          if (currentCustomer) savePushPrefs(currentCustomer.id, v);
+        }}
+        onEnablePush={() => {
+          if (currentCustomer) enablePush(currentCustomer.id).then(setPushStatus);
+        }}
+        favoritesCount={favorites.length}
+        onOpenFavorites={() => setIsManageFavoritesOpen(true)}
+        invoices={myInvoices}
+        onDownloadInvoice={handleDownloadInvoice}
+        onOpenAllInvoices={() => setIsInvoicesOpen(true)}
         currentInterface={currentInterface}
         onToggleInterface={handleSelectInterface}
         onOpenInterfaceChoiceModal={() => setIsInterfaceChoiceOpen(true)}
@@ -2569,6 +2900,12 @@ export default function App() {
                       ? `Welcome back, ${welcomeCustomer.fullName}!`
                       : `Bon retour parmi nous, ${welcomeCustomer.fullName} !`}
                   </h4>
+                  {loyaltyTier && (
+                    <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-300 to-amber-500 text-amber-950 text-[10px] sm:text-[11px] font-black flex items-center gap-1">
+                      <Star className="w-3 h-3 fill-amber-900 text-amber-900" />
+                      {loyaltyTier.name}
+                    </span>
+                  )}
                   {welcomeCustomer.companyName && (
                     <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] sm:text-[11px] font-bold truncate max-w-[200px]">
                       {welcomeCustomer.companyName}
@@ -2579,7 +2916,7 @@ export default function App() {
                     <span>{currentLang === 'ar' ? 'حساب تاجر مفعل' : 'Accès Grossiste Actif'}</span>
                   </span>
                 </div>
-                <p className="text-[11px] sm:text-xs text-amber-100/80 mt-0.5 truncate">
+                <p className="max-sm:hidden text-[11px] sm:text-xs text-amber-100/80 mt-0.5 truncate">
                   {currentLang === 'ar'
                     ? 'تم تفعيل جميع أسعار الجملة ونصف الجملة وتوفر المخزون الحقيقي.'
                     : currentLang === 'en'
@@ -2591,7 +2928,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setWelcomeCustomer(null)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer shrink-0"
+              className="p-3 sm:p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer shrink-0"
               title="Fermer ce message"
             >
               <X className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -2602,7 +2939,7 @@ export default function App() {
 
       {/* Toast Notification */}
       {syncToastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 bg-emerald-700 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-semibold animate-bounce">
+        <div className="fixed bottom-20 sm:bottom-5 right-3 sm:right-5 z-50 bg-emerald-700 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-semibold animate-bounce">
           <CheckCircle2 className="w-5 h-5 text-emerald-200" />
           <span>{syncToastMessage}</span>
         </div>
@@ -2610,7 +2947,7 @@ export default function App() {
 
       {/* Mobile Back Button Exit Confirmation Toast */}
       {backExitPrompt && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-950/92 text-white px-4 py-2.5 rounded-full shadow-2xl border border-white/20 text-xs font-semibold backdrop-blur-md flex items-center gap-2 pointer-events-none animate-in fade-in duration-150">
+        <div className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-950/92 text-white px-4 py-2.5 rounded-full shadow-2xl border border-white/20 text-xs font-semibold backdrop-blur-md flex items-center gap-2 pointer-events-none animate-in fade-in duration-150">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
           <span>
             {currentLang === 'ar'
@@ -2619,6 +2956,76 @@ export default function App() {
               ? 'Press back again to exit'
               : 'Appuyez à nouveau pour quitter'}
           </span>
+        </div>
+      )}
+
+      {/* Add-to-order banner */}
+      {amendOrder && (
+        <div className="sticky top-0 z-40 bg-[#500428] text-white px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-lg">
+          <span className="font-bold">
+            {currentLang === 'ar'
+              ? `إضافة إلى الطلبية ${amendOrder.orderNumber}: اختر المنتجات ثم أرسل الإضافة.`
+              : `Ajout à la commande ${amendOrder.orderNumber} : choisissez vos articles puis envoyez l'ajout (${cart.length} réf.).`}
+          </span>
+          <span className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={cart.length === 0}
+              onClick={handleSendAmendment}
+              className="px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 font-black disabled:opacity-40 cursor-pointer"
+            >
+              {currentLang === 'ar' ? 'إرسال الإضافة' : "Envoyer l'ajout"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAmendOrder(null)}
+              className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 font-bold cursor-pointer"
+            >
+              {currentLang === 'ar' ? 'إلغاء' : 'Annuler'}
+            </button>
+          </span>
+        </div>
+      )}
+
+      {/* Customer's usual products (one tap to reorder) */}
+      {offers.reorder.enabled && isPricesVisible && myInsights && myInsights.usual.length > 0 && (
+        <div className="w-full max-w-7xl mx-auto px-4 pt-3">
+          <div className="rounded-2xl border border-rose-200 bg-white p-2.5 sm:p-3 flex flex-nowrap sm:flex-wrap overflow-x-auto items-center gap-2 text-xs">
+            <span className="font-black text-[#70083b] whitespace-nowrap max-sm:hidden">
+              {currentLang === 'ar' ? 'منتجاتك المعتادة :' : 'Vos produits habituels :'}
+            </span>
+            {myInsights.usual.slice(0, 6).map((u) => {
+              const prod = products.find((p) => p.id === u.productId);
+              if (!prod || prod.stock <= 0 || prod.isHidden) return null;
+              const qty = Math.min(prod.stock, u.lastQty);
+              return (
+                <button
+                  key={u.productId}
+                  type="button"
+                  onClick={() => handleAddToCart(prod, qty)}
+                  className="px-3 py-2.5 sm:px-2.5 sm:py-1 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-[#70083b] font-bold cursor-pointer whitespace-nowrap shrink-0"
+                  title={prod.name}
+                >
+                  + {prod.code} · {prod.family === 'Extrait' ? `${qty}g` : `${qty}×`}
+                </button>
+              );
+            })}
+            {myInsights.orders.filter((o) => !o.isProforma && o.status !== 'annulee')[0] && (
+              <button
+                type="button"
+                onClick={() => handleReorder(myInsights.orders.filter((o) => !o.isProforma && o.status !== 'annulee')[0])}
+                className="sm:ml-auto max-sm:order-first px-3.5 py-2.5 sm:px-3 sm:py-1 rounded-full bg-[#9f0e4e] hover:bg-[#70083b] text-white font-black cursor-pointer whitespace-nowrap shrink-0"
+              >
+                🔁 {currentLang === 'ar' ? 'إعادة آخر طلبية' : 'Recommander ma dernière commande'}
+              </button>
+            )}
+          </div>
+          {loyaltyTier && (
+            <div className="max-sm:hidden mt-1.5 text-[11px] text-[#70083b] font-semibold">
+              ⭐ {currentLang === 'ar' ? 'مستوى الولاء' : 'Statut fidélité'} : {loyaltyTier.name}
+              {loyaltyTier.perk ? ` — ${loyaltyTier.perk}` : ''}
+            </div>
+          )}
         </div>
       )}
 
@@ -2643,12 +3050,24 @@ export default function App() {
           onSelectFamily={setSelectedFamily}
           favorites={favorites}
           onToggleFavorite={handleToggleFavorite}
+          offers={offers}
           isLoading={isCatalogLoading}
+          genderFilter={genderFilter}
+          onSelectGender={setGenderFilter}
+          genderCounts={genderCounts}
+          brandOptions={brandOptions}
+          selectedBrands={brandFilter}
+          onToggleBrand={(b) =>
+            setBrandFilter((prev) => (prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]))
+          }
+          showOnlyClearance={showOnlyClearance}
+          onToggleOnlyClearance={() => setShowOnlyClearance((v) => !v)}
+          clearanceCount={clearanceCount}
         />
       ) : (
         <>
           {/* Hero / Information Showcase Banner */}
-          <section className="bg-gradient-to-br from-[#3b021d] via-[#4d0427] to-[#1f0210] text-white border-b border-[#70083b]/60 relative overflow-hidden">
+          <section className={`${isPricesVisible ? 'max-sm:hidden ' : ''}bg-gradient-to-br from-[#3b021d] via-[#4d0427] to-[#1f0210] text-white border-b border-[#70083b]/60 relative overflow-hidden`}>
         <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#ec4899_1.2px,transparent_1.2px)] [background-size:16px_16px] pointer-events-none"></div>
 
         <div className="max-w-7xl mx-auto px-4 py-3.5 sm:py-6 lg:py-8 relative z-10">
@@ -2659,11 +3078,11 @@ export default function App() {
                 <span>Vente en Gros & Demi-Gros aux Parfumeurs & Artisans en Algérie</span>
               </div>
 
-              <h2 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-white leading-snug">
+              <h2 className="text-lg sm:text-2xl lg:text-3xl font-black tracking-tight text-white leading-snug">
                 Matières Premières de Parfumerie : Extraits & Flacons
               </h2>
 
-              <p className="text-xs sm:text-sm text-rose-100/90 mt-1 sm:mt-2 leading-relaxed max-w-xl">
+              <p className="max-sm:hidden text-xs sm:text-sm text-rose-100/90 mt-1 sm:mt-2 leading-relaxed max-w-xl">
                 <span className="block sm:hidden">
                   Disponibilités réelles synchronisées avec le stock. Réservation en ligne avec Bon de Précommande PDF.
                 </span>
@@ -2771,9 +3190,80 @@ export default function App() {
         </div>
       </section>
 
+      {/* Reward ladder banner (same as the cart) */}
+      {isPricesVisible && offers.rewardLadder.enabled && (
+        <div className="px-4 sm:px-6">
+          <RewardLadder calc={cartCalc} offers={offers} lang={currentLang} variant="store" />
+        </div>
+      )}
+
+      {/* Packs header */}
+      <PacksHeader
+        offers={offers}
+        products={products}
+        cart={cart}
+        isPricesVisible={isPricesVisible}
+        lang={currentLang}
+        onAddPack={(b) =>
+          b.items.forEach((bi) => {
+            const prod = products.find((p) => p.id === bi.productId);
+            const have = cart.find((i) => i.product.id === bi.productId)?.quantity || 0;
+            if (prod && have < bi.quantity) handleAddToCart(prod, bi.quantity - have);
+          })
+        }
+      />
+
       {/* Main Catalog View */}
       <main className="max-w-7xl mx-auto px-4 py-6 sm:py-8 flex-1 w-full">
-        {/* Filters and Search Bar */}
+        <ClearanceBanner
+          count={clearanceCount}
+          maxDiscount={clearanceInfo.maxDiscount}
+          endsAt={clearanceInfo.endsAt}
+          active={showOnlyClearance}
+          onToggle={() => setShowOnlyClearance((v) => !v)}
+          lang={currentLang}
+        />
+
+        <div className="lg:flex lg:items-start lg:gap-6">
+          <aside className="hidden lg:block w-72 shrink-0 sticky top-4 self-start">
+          {/* Desktop left filter sidebar */}
+          <ProductFilter
+              variant="sidebar"
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            selectedFamily={selectedFamily}
+            onSelectFamily={setSelectedFamily}
+            stockFilter={stockFilter}
+            onSelectStockFilter={setStockFilter}
+            sortOption={sortOption}
+            onSelectSortOption={setSortOption}
+            totalCount={products.length}
+            filteredCount={filteredProducts.length}
+            familyCounts={familyCounts}
+            onResetFilters={handleResetFilters}
+            lang={currentLang}
+            favoritesCount={favorites.length}
+            showOnlyFavorites={showOnlyFavorites}
+            onToggleOnlyFavorites={() => setShowOnlyFavorites((prev) => !prev)}
+            onManageFavorites={() => setIsManageFavoritesOpen(true)}
+            showOnlyTopSellers={showOnlyTopSellers}
+            onToggleOnlyTopSellers={() => setShowOnlyTopSellers((prev) => !prev)}
+            topSellersCount={topSellersCount}
+            genderFilter={genderFilter}
+            onSelectGender={setGenderFilter}
+            genderCounts={genderCounts}
+            brandOptions={brandOptions}
+            selectedBrands={brandFilter}
+            onToggleBrand={(b) =>
+              setBrandFilter((prev) => (prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]))
+            }
+            showOnlyClearance={showOnlyClearance}
+            onToggleOnlyClearance={() => setShowOnlyClearance((v) => !v)}
+            clearanceCount={clearanceCount}
+          />
+          </aside>
+          <div className="min-w-0 flex-1">
+        {/* Search bar + quick filters */}
         <ProductFilter
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -2791,9 +3281,21 @@ export default function App() {
           favoritesCount={favorites.length}
           showOnlyFavorites={showOnlyFavorites}
           onToggleOnlyFavorites={() => setShowOnlyFavorites((prev) => !prev)}
+          onManageFavorites={() => setIsManageFavoritesOpen(true)}
           showOnlyTopSellers={showOnlyTopSellers}
           onToggleOnlyTopSellers={() => setShowOnlyTopSellers((prev) => !prev)}
           topSellersCount={topSellersCount}
+          genderFilter={genderFilter}
+          onSelectGender={setGenderFilter}
+          genderCounts={genderCounts}
+          brandOptions={brandOptions}
+          selectedBrands={brandFilter}
+          onToggleBrand={(b) =>
+            setBrandFilter((prev) => (prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]))
+          }
+          showOnlyClearance={showOnlyClearance}
+          onToggleOnlyClearance={() => setShowOnlyClearance((v) => !v)}
+          clearanceCount={clearanceCount}
         />
 
         {/* Real-time background stock update indicator */}
@@ -2847,7 +3349,7 @@ export default function App() {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-5">
               {paginatedProducts.map((product, idx) => {
                 const inCartItem = cart.find((i) => i.product.id === product.id);
                 const cartQuantity = inCartItem ? inCartItem.quantity : 0;
@@ -2866,6 +3368,8 @@ export default function App() {
                     isFavorite={favorites.includes(product.id)}
                     onToggleFavorite={handleToggleFavorite}
                     isPriority={idx < 4}
+                    offers={offers}
+                    popularCount={offers.socialProof.enabled ? popularCounts[product.id] || 0 : 0}
                   />
                 );
               })}
@@ -2936,6 +3440,8 @@ export default function App() {
             )}
           </div>
         )}
+          </div>
+        </div>
       </main>
         </>
       )}
@@ -3139,9 +3645,84 @@ export default function App() {
         
       </footer>
 
+      <ScrollToTopButton lang={currentLang} />
+
+      {/* Phone navigation (catalogue, quick order, cart) and room for it at the end of the page */}
+      <MobileBottomNav
+        currentInterface={pendingInterface || currentInterface}
+        isSwitching={Boolean(pendingInterface)}
+        onSelectInterface={handleSelectInterface}
+        cartCount={cart.length}
+        favoritesCount={favorites.length}
+        savedActive={showOnlyFavorites}
+        onOpenSaved={() => setIsManageFavoritesOpen(true)}
+        onOpenMenu={() => setIsMobileMenuOpen(true)}
+        cartTotalDA={cartTotalDA}
+        isPricesVisible={isPricesVisible}
+        onOpenCart={() => setIsCartOpen(true)}
+        lang={currentLang}
+      />
+      <div className="h-20 sm:hidden shrink-0" aria-hidden="true" />
+
+      <ManageFavoritesModal
+        isOpen={isManageFavoritesOpen}
+        onClose={() => setIsManageFavoritesOpen(false)}
+        products={products}
+        favorites={favorites}
+        onRemoveFavorite={handleToggleFavorite}
+        onClearFavorites={() => setFavorites([])}
+        onAddToCart={handleAddToCart}
+        isPricesVisible={isPricesVisible}
+        lang={currentLang}
+      />
+
+      <MobileMenuSheet
+        open={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        lang={currentLang}
+        onSelectLanguage={handleSelectLanguage}
+        customer={currentCustomer}
+        loyaltyTier={loyaltyTier}
+        nextLoyaltyTier={myInsights?.loyalty?.nextTier || null}
+        loyaltySpendDA={myInsights?.loyalty?.spendDA || 0}
+        loyaltyWindowDays={myInsights?.loyalty?.windowDays || offers.loyalty.windowDays}
+        spendStats={myInsights?.stats || null}
+        pushStatus={pushStatus}
+        marketingPush={marketingPush}
+        onToggleMarketing={(v) => {
+          setMarketingPush(v);
+          if (currentCustomer) savePushPrefs(currentCustomer.id, v);
+        }}
+        onEnablePush={() => {
+          if (currentCustomer) enablePush(currentCustomer.id).then(setPushStatus);
+        }}
+        favoritesCount={favorites.length}
+        onOpenOrders={() => setIsOrderTrackingOpen(true)}
+        onOpenFavorites={() => {
+          setIsMobileMenuOpen(false);
+          setIsManageFavoritesOpen(true);
+        }}
+        onOpenInvoices={() => setIsInvoicesOpen(true)}
+        onLogin={handleRequireLogin}
+        onLogout={handleLogoutCustomer}
+      />
+
+      {currentCustomer && (
+        <MyInvoicesModal
+          isOpen={isInvoicesOpen}
+          onClose={() => setIsInvoicesOpen(false)}
+          orders={myInvoices}
+          storeSettings={storeSettings}
+          isPricesVisible={isPricesVisible}
+          lang={currentLang}
+        />
+      )}
+
       {/* Unified Sticky Bottom Order Bar across both Showroom and Quick Order interfaces */}
       <StickyBottomOrderBar
         cart={cart}
+        offers={offers}
+        loyaltyTier={loyaltyTier}
         isPricesVisible={isPricesVisible}
         lang={currentLang}
         onOpenCart={() => setIsCartOpen(true)}
@@ -3169,6 +3750,9 @@ export default function App() {
         onDeleteSavedPreorder={handleDeleteSavedPreorder}
         allProducts={products}
         onAddToCart={handleAddToCart}
+        offers={offers}
+        popular={popularCounts}
+        loyaltyTier={loyaltyTier}
       />
 
       {/* Suspense boundary for code-split modals */}
@@ -3183,6 +3767,8 @@ export default function App() {
           isProforma={isProformaMode}
           isPricesVisible={isPricesVisible}
           lang={currentLang}
+          offers={offers}
+          loyaltyTier={loyaltyTier}
         />
 
         <OrderConfirmationModal
@@ -3197,6 +3783,10 @@ export default function App() {
           isPricesVisible={isPricesVisible}
           lang={currentLang}
           deviceInfo={deviceInfo}
+          addToOrderHours={
+            recentOrder && canAddToOrder(recentOrder) && !recentOrder.isOfflinePending ? offers.addToOrder.windowHours : undefined
+          }
+          onAddToOrder={(o) => setAmendOrder(o)}
         />
 
         {/* Language Selection Modal (Asks customer on first visit and remembers choice) */}
@@ -3209,10 +3799,17 @@ export default function App() {
         <OrderTrackingModal
           isOpen={isOrderTrackingOpen}
           onClose={() => setIsOrderTrackingOpen(false)}
-          orders={orders}
+          orders={
+            myInsights
+              ? [...myInsights.orders, ...orders.filter((o) => !myInsights.orders.some((m) => m.id === o.id))]
+              : orders
+          }
           currentCustomer={currentCustomer}
           storeSettings={storeSettings}
           lang={currentLang}
+          onReorder={offers.reorder.enabled ? handleReorder : undefined}
+          onAddToOrder={(o) => setAmendOrder(o)}
+          canAddToOrder={canAddToOrder}
         />
 
         <ExcelSyncModal

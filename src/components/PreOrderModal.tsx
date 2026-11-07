@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Phone, FileText, CheckCircle2, User, Building, ShieldCheck, MapPin, Truck, Lock, Store } from 'lucide-react';
-import { CartItem, CustomerDetails, CustomerUser, DeliveryMode, StoreSettings } from '../types';
+import { CartItem, CustomerDetails, CustomerUser, DeliveryMode, LoyaltyTier, OffersConfig, StoreSettings } from '../types';
+import { computeCart } from '../utils/offers';
 import { ALGERIAN_WILAYAS } from '../data/wilayas';
 import { formatDZD } from '../utils/pdfGenerator';
 import { calculateDiscountedPrice } from '../utils/productUtils';
@@ -19,6 +20,8 @@ interface PreOrderModalProps {
   isProforma?: boolean;
   isPricesVisible?: boolean;
   lang?: AppLanguage;
+  offers?: OffersConfig | null;
+  loyaltyTier?: LoyaltyTier | null;
 }
 
 export const PreOrderModal: React.FC<PreOrderModalProps> = ({
@@ -31,6 +34,8 @@ export const PreOrderModal: React.FC<PreOrderModalProps> = ({
   isProforma = false,
   isPricesVisible = false,
   lang = 'ar',
+  offers = null,
+  loyaltyTier = null,
 }) => {
   const t = translations[lang];
   const isRtl = false; // Layout stays LTR for accessibility and right-handed reachability
@@ -60,10 +65,8 @@ export const PreOrderModal: React.FC<PreOrderModalProps> = ({
 
   if (!isOpen) return null;
 
-  const totalAmountDA = items.reduce((sum, item) => {
-    const unitPrice = calculateDiscountedPrice(item.product.priceDA, item.product.discountPercent);
-    return sum + unitPrice * item.quantity;
-  }, 0);
+  const calc = computeCart(items, offers, loyaltyTier);
+  const totalAmountDA = calc.totalDA;
 
   const totalUnits = items.reduce((sum, item) => sum + item.quantity, 0);
   const selectedWilaya = ALGERIAN_WILAYAS.find((w) => w.code === wilayaCode) || ALGERIAN_WILAYAS[30];
@@ -220,9 +223,19 @@ export const PreOrderModal: React.FC<PreOrderModalProps> = ({
             <div className="text-right">
               {isPricesVisible ? (
                 <>
+                  {calc.discountDA > 0 && (
+                    <span className="text-[11px] text-emerald-700 font-bold block">
+                      {lang === 'ar' ? 'تخفيضات مطبقة' : 'Remises appliquées'} : -{formatDZD(calc.discountDA)}
+                    </span>
+                  )}
                   <span className="text-lg font-black text-[#9f0e4e] block">
                     {formatDZD(totalAmountDA)}
                   </span>
+                  {calc.freeDelivery && (
+                    <span className="text-[11px] text-emerald-700 font-bold block">
+                      ✓ {lang === 'ar' ? 'التوصيل مجاني' : 'Livraison offerte'}
+                    </span>
+                  )}
                   <span className="text-[11px] text-[#880e4f] font-semibold">
                     {isProforma ? 'Devis Proforma officiel avec réservation 48H' : 'Paiement à la livraison / retrait'}
                   </span>

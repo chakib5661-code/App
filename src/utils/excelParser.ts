@@ -104,6 +104,8 @@ export const parseInventoryFile = async (file: File): Promise<ParseResult> => {
           let unit = 'Unité';
           let description = '';
           let origin = 'Algérie';
+          let brand = '';
+          let gender = '';
 
           for (const [rawKey, rawVal] of Object.entries(row)) {
             const key = normalizeKey(rawKey);
@@ -151,6 +153,14 @@ export const parseInventoryFile = async (file: File): Promise<ParseResult> => {
             else if (origin === 'Algérie' && (key.includes('origine') || key.includes('provenance') || key.includes('pays'))) {
               if (valStr) origin = valStr;
             }
+            // Match Brand (Marque)
+            else if (!brand && !key.includes('remarque') && (key.includes('marque') || key === 'brand')) {
+              brand = valStr;
+            }
+            // Match Gender (Genre / Sexe)
+            else if (!gender && (key.includes('genre') || key.includes('sexe') || key === 'gender')) {
+              gender = valStr;
+            }
           }
 
           // Fallback if code or name is missing
@@ -189,6 +199,8 @@ export const parseInventoryFile = async (file: File): Promise<ParseResult> => {
             minAlertStock: family === 'Extrait' ? 500 : 5,
             description: description || `Matière première qualité professionnelle pour l'industrie du parfum et cosmétique.`,
             origin: origin || 'Import / Local',
+            brand: brand || undefined,
+            gender: gender || undefined,
             imageUrl: defaultImage,
             lastUpdated: new Date().toISOString(),
           });
@@ -306,6 +318,8 @@ export const exportCatalogToExcel = (products: Product[]) => {
     'Équivalent Flacons (si Extrait)': p.family === 'Extrait' ? `${Math.floor(p.stock / 100)} flacons de 100g` : '-',
     'Statut': p.stock > 0 ? (p.stock < (p.minAlertStock || 5) ? 'Stock Faible' : 'En Stock') : 'Épuisé',
     'Origine': p.origin || '',
+    'Marque': p.brand || '',
+    'Genre': p.gender || '',
     'Dernière Mise à Jour': p.lastUpdated ? new Date(p.lastUpdated).toLocaleDateString('fr-DZ') : '',
   }));
 

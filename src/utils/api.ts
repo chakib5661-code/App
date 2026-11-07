@@ -1040,3 +1040,124 @@ export async function syncExtraitImagesFromBlob(options?: {
 
 
 
+
+// ---------------- OFFERS, REORDER, ADD-TO-ORDER, CARTS & REMINDERS ----------------
+
+import type { OffersConfig, SavedCart } from '../types';
+
+export async function fetchOffers(): Promise<{ offers: OffersConfig; popular: Record<string, number> } | null> {
+  try {
+    const res = await fetch('/api/offers');
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.success ? { offers: json.offers, popular: json.popular || {} } : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveOffersOnServer(offers: OffersConfig): Promise<OffersConfig | null> {
+  try {
+    const res = await fetch('/api/offers', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ offers }),
+    });
+    const json = await res.json();
+    return res.ok && json.success ? json.offers : null;
+  } catch (err) {
+    console.error('[API] saveOffersOnServer error:', err);
+    return null;
+  }
+}
+
+export interface MyOrdersResponse {
+  orders: PreOrder[];
+  usual: { productId: string; count: number; lastQty: number; lastDate: string }[];
+  stats?: { totalSpendDA: number; ordersCount: number; since: string | null };
+  loyalty: {
+    spendDA: number;
+    windowDays: number;
+    tier: import('../types').LoyaltyTier | null;
+    nextTier: import('../types').LoyaltyTier | null;
+  };
+}
+
+export async function fetchMyOrders(customerId: string, username: string): Promise<MyOrdersResponse | null> {
+  try {
+    const res = await fetch('/api/my-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, username }),
+    });
+    const json = await res.json();
+    return res.ok && json.success ? json : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function addItemsToOrderOnServer(
+  orderId: string,
+  customerId: string,
+  items: { productId: string; quantity: number }[]
+): Promise<{ success: boolean; order?: PreOrder; updatedProducts?: Product[]; error?: string }> {
+  try {
+    const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/add-items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, items }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) return { success: false, error: json.error || "Impossible d'ajouter à la commande." };
+    return { success: true, order: json.order, updatedProducts: json.updatedProducts };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erreur réseau' };
+  }
+}
+
+export function saveCartOnServer(cart: Omit<SavedCart, 'updatedAt'>): void {
+  fetch('/api/carts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cart),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+export interface DueRemindersResponse {
+  carts: (SavedCart & { whatsapp?: string })[];
+  reorders: { customerId: string; fullName: string; companyName?: string; phone?: string; lastOrderDate: string; daysSince: number; whatsapp?: string }[];
+}
+
+export async function fetchDueReminders(): Promise<DueRemindersResponse | null> {
+  try {
+    const res = await fetch('/api/reminders/due');
+    const json = await res.json();
+    return res.ok && json.success ? json : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchMyFavorites(customerId: string): Promise<string[] | null> {
+  try {
+    const res = await fetch(`/api/my-favorites?customerId=${encodeURIComponent(customerId)}`);
+    const json = await res.json();
+    return res.ok && json.success && Array.isArray(json.favorites) ? json.favorites : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveMyFavorites(customerId: string, favorites: string[]): Promise<void> {
+  try {
+    await fetch('/api/my-favorites', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, favorites }),
+    });
+  } catch {
+    /* stays in local storage; synced on the next change or login */
+  }
+}

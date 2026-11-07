@@ -32,6 +32,8 @@ interface OrderConfirmationModalProps {
   isPricesVisible?: boolean;
   onOpenInstallGuide?: () => void;
   deviceInfo?: DeviceInfo;
+  addToOrderHours?: number; // when set, offers to add items to this order
+  onAddToOrder?: (order: PreOrder) => void;
 }
 
 export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
@@ -44,6 +46,8 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
   isPricesVisible = false,
   onOpenInstallGuide,
   deviceInfo,
+  addToOrderHours,
+  onAddToOrder,
 }) => {
   const storeSettings = rawStoreSettings || INITIAL_STORE_SETTINGS;
   const t = translations[lang];
@@ -169,6 +173,25 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
               <span>{t.printPdfBtn}</span>
             </button>
           </div>
+
+          {onAddToOrder && addToOrderHours && addToOrderHours > 0 && !isProforma && (
+            <button
+              id="btn-add-to-order"
+              type="button"
+              onClick={() => {
+                onAddToOrder(order);
+                onClose();
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-[#70083b] border border-rose-300 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-xs"
+            >
+              <span>
+                ➕{' '}
+                {lang === 'ar'
+                  ? `نسيت شيئاً؟ أضف إلى هذه الطلبية خلال ${addToOrderHours} ساعة`
+                  : `Un oubli ? Ajoutez des articles à cette commande (jusqu'à ${addToOrderHours} h, même livraison)`}
+              </span>
+            </button>
+          )}
 
           {/* Follow / Track Order Button */}
           {onTrackOrder && (
