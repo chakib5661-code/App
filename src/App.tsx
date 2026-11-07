@@ -3050,8 +3050,8 @@ export default function App() {
         <>
         {/* Reward ladder banner, same as the catalogue */}
         {isPricesVisible && offers.rewardLadder.enabled && (
-          <div className="bg-[#faf7f9] pt-3">
-            <div className="px-4 sm:px-6 max-w-7xl mx-auto">
+          <div className="bg-[#faf7f9] pt-3 w-full">
+            <div className="px-4 sm:px-6 max-w-7xl mx-auto w-full">
             <RewardLadder calc={cartCalc} offers={offers} lang={currentLang} variant="store" />
             </div>
           </div>
