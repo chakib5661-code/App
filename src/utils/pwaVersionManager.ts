@@ -31,6 +31,8 @@ export function registerPwaServiceWorker(): void {
     navigator.serviceWorker.getRegistrations()
       .then((registrations) => {
         for (const registration of registrations) {
+          // Keep the push-only worker (it does no caching)
+          if (registration.active?.scriptURL?.endsWith('/sw-push.js')) continue;
           registration.unregister()
             .then((success) => {
               if (success) {
@@ -50,7 +52,9 @@ export function unregisterPwaServiceWorker(): Promise<boolean> {
   }
 
   return navigator.serviceWorker.getRegistrations().then((registrations) => {
-    const unregisterPromises = registrations.map((r) => r.unregister());
+    const unregisterPromises = registrations
+      .filter((r) => !r.active?.scriptURL?.endsWith('/sw-push.js'))
+      .map((r) => r.unregister());
     return Promise.all(unregisterPromises).then(() => true);
   });
 }

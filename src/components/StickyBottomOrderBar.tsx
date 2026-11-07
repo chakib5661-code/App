@@ -1,15 +1,17 @@
 import React from 'react';
 import { ShoppingBag, ArrowRight } from 'lucide-react';
-import { CartItem } from '../types';
+import { CartItem, LoyaltyTier, OffersConfig } from '../types';
+import { computeCart } from '../utils/offers';
 import { AppLanguage, translations } from '../translations';
 import { formatDZD } from '../utils/formatDZD';
-import { calculateDiscountedPrice } from '../utils/productUtils';
 
 interface StickyBottomOrderBarProps {
   cart: CartItem[];
   isPricesVisible: boolean;
   lang?: AppLanguage;
   onOpenCart: () => void;
+  offers?: OffersConfig | null;
+  loyaltyTier?: LoyaltyTier | null;
 }
 
 export const StickyBottomOrderBar: React.FC<StickyBottomOrderBarProps> = ({
@@ -17,6 +19,8 @@ export const StickyBottomOrderBar: React.FC<StickyBottomOrderBarProps> = ({
   isPricesVisible,
   lang = 'ar',
   onOpenCart,
+  offers = null,
+  loyaltyTier = null,
 }) => {
   const t = translations[lang];
   const isRtl = false; // Layout stays LTR for accessibility and right-handed reachability
@@ -24,18 +28,12 @@ export const StickyBottomOrderBar: React.FC<StickyBottomOrderBarProps> = ({
   const validCart = cart.filter((item) => item && item.product && typeof item.quantity === 'number');
   if (validCart.length === 0) return null;
 
-  const totalUnitsOrGrams = validCart.reduce((sum, item) => sum + (item.quantity || 0), 0);
-  const totalPriceDA = validCart.reduce((sum, item) => {
-    const p = item.product;
-    if (!p) return sum;
-    const unitPrice = calculateDiscountedPrice(p.priceDA, p.discountPercent);
-    return sum + unitPrice * (item.quantity || 0);
-  }, 0);
+  const totalPriceDA = computeCart(validCart, offers, loyaltyTier).totalDA;
 
   return (
     <aside
       aria-label="Récapitulatif de votre commande"
-      className="fixed bottom-0 inset-x-0 bg-gradient-to-r from-[#400320]/95 via-[#500428]/95 to-[#240313]/95 backdrop-blur-md text-white border-t border-[#70083b]/70 py-2.5 sm:py-3 px-3 sm:px-4 z-40 shadow-2xl"
+      className="max-sm:hidden fixed bottom-0 inset-x-0 bg-gradient-to-r from-[#400320]/95 via-[#500428]/95 to-[#240313]/95 backdrop-blur-md text-white border-t border-[#70083b]/70 py-2.5 sm:py-3 px-3 sm:px-4 z-40 shadow-2xl"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2.5">
@@ -44,16 +42,6 @@ export const StickyBottomOrderBar: React.FC<StickyBottomOrderBarProps> = ({
             <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 text-rose-100" />
           </div>
           <div className="min-w-0">
-            <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-              <span>
-                {cart.length} <span className="hidden xs:inline sm:inline">{lang === 'ar' ? 'أصناف' : 'références'}</span>
-              </span>
-              <span>•</span>
-              <span className="text-rose-200">
-                {totalUnitsOrGrams} <span className="hidden sm:inline">{lang === 'ar' ? 'وحدة / غرام' : 'unités / g'}</span>
-              </span>
-            </div>
-
             {/* Total Price Display */}
             <div className="text-xs font-mono font-extrabold flex items-center gap-1.5 mt-0.5">
               {isPricesVisible ? (

@@ -103,6 +103,10 @@ export const ExcelSyncModal: React.FC<ExcelSyncModalProps> = ({
         family: 'Extrait' as const,
         unit: p.unit || '1g (Contenant 100g)',
         imageUrl: existing?.imageUrl || p.imageUrl || '/tulip-extrait-default.jpg',
+        // Keep brand / gender / style set via the tags import when the POS file has none
+        brand: p.brand || existing?.brand,
+        gender: p.gender || existing?.gender,
+        style: existing?.style ?? p.style,
         lastUpdated: new Date().toISOString(),
       };
     });
