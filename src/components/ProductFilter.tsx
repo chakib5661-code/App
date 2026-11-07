@@ -325,23 +325,172 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
     activeChips.push({ key: 'clr', label: L('Soldes', 'Sale', 'تخفيضات'), onRemove: onToggleOnlyClearance });
 
   if (variant === 'sidebar') {
+    const heading = 'text-[11px] font-black uppercase tracking-wider text-[#9f0e4e] mb-3';
+    const divider = <div className="h-px bg-rose-100/80" />;
+    const countPill = (n: number, tone: 'rose' | 'slate' | 'red' = 'slate') =>
+      `text-[11px] font-bold px-2 py-0.5 rounded-md ${
+        tone === 'rose' ? 'bg-rose-100 text-[#9f0e4e]' : tone === 'red' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'
+      }`;
+    const row = 'flex items-center gap-2.5 cursor-pointer text-sm text-slate-800 select-none';
+    const box = 'w-4 h-4 accent-[#9f0e4e] cursor-pointer shrink-0';
+    const famRows = familyTabs.filter((f) => f.key !== 'all');
+    const genderKeys = (['men', 'women', 'unisex'] as const).filter(() => hasGenderData);
+
     return (
-      <div className="bg-white rounded-2xl border border-rose-100 shadow-2xs" dir="ltr">
-        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2 text-base font-black text-slate-900">
-            <SlidersHorizontal className="w-4 h-4 text-[#9f0e4e]" />
-            {L('Filtres', 'Filters', 'تصفية')}
-          </div>
+      <div className="bg-white rounded-2xl border border-rose-100 shadow-2xs p-5 space-y-5" dir="ltr">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-slate-500">
+            {t.productsFound} : <strong className="text-slate-900">{filteredCount}</strong> / {totalCount}
+          </span>
           {hasActiveFilters && (
-            <button type="button" onClick={onResetFilters} className="text-xs font-bold text-[#9f0e4e] hover:underline cursor-pointer">
+            <button type="button" onClick={onResetFilters} className="font-bold text-slate-700 hover:text-[#9f0e4e] cursor-pointer">
               {L('Effacer', 'Clear', 'مسح')}
             </button>
           )}
         </div>
-        <div className="px-5 py-4 space-y-5 max-h-[calc(100vh-7rem)] overflow-y-auto">{sections}</div>
-        <div className="px-5 py-3 border-t border-slate-100 text-xs text-slate-600">
-          {t.productsFound} : <strong className="text-slate-950">{filteredCount}</strong> / {totalCount}
-        </div>
+
+        {divider}
+
+        <section>
+          <div className={heading}>{L('Famille de produits', 'Product family', 'فئة المنتجات')}</div>
+          <div className="space-y-2.5">
+            {famRows.map((f) => (
+              <label key={f.key} className={row}>
+                <input
+                  type="checkbox"
+                  className={box}
+                  checked={selectedFamily === f.key}
+                  onChange={() => pickFamily(selectedFamily === f.key ? 'all' : f.key)}
+                />
+                <span className="flex-1">{f.label}</span>
+                <span className={countPill(f.count, selectedFamily === f.key ? 'rose' : 'slate')}>{f.count}</span>
+              </label>
+            ))}
+            {onToggleOnlyClearance && clearanceCount > 0 && (
+              <label className={`${row} !text-red-600 font-semibold`}>
+                <input type="checkbox" className={box} checked={showOnlyClearance} onChange={onToggleOnlyClearance} />
+                <span className="flex-1">{L('Déstockage et soldes', 'Sale and clearance', 'التخفيضات والتصفية')}</span>
+                <span className={countPill(clearanceCount, 'red')}>{clearanceCount}</span>
+              </label>
+            )}
+          </div>
+        </section>
+
+        {hasGenderData && (
+          <>
+            {divider}
+            <section>
+              <div className={heading}>{L('Genre', 'Gender', 'الجنس')}</div>
+              <div className="grid grid-cols-3 gap-2">
+                {genderKeys.map((g) => {
+                  const on = genderFilter === g;
+                  return (
+                    <label
+                      key={g}
+                      className={`flex items-center gap-1.5 px-2 py-2 rounded-lg border text-xs font-bold cursor-pointer transition ${
+                        on ? 'border-[#9f0e4e] bg-rose-50 text-[#9f0e4e]' : 'border-slate-200 text-slate-700 hover:border-rose-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="w-3.5 h-3.5 accent-[#9f0e4e] shrink-0"
+                        checked={on}
+                        onChange={() => onSelectGender?.(on ? 'all' : g)}
+                      />
+                      <span className="truncate">{genderLabel(g)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        )}
+
+        {hasBrands && (
+          <>
+            {divider}
+            <section>
+              <div className="flex items-baseline justify-between mb-3">
+                <div className="text-[11px] font-black uppercase tracking-wider text-[#9f0e4e]">
+                  {L('Marques', 'Brands', 'العلامات')}
+                </div>
+                {selectedBrands.length > 0 && (
+                  <span className="text-[11px] text-slate-500">
+                    {L(`${selectedBrands.length} sélectionnée(s)`, `${selectedBrands.length} selected`, `${selectedBrands.length} محددة`)}
+                  </span>
+                )}
+              </div>
+              <div className="relative mb-3">
+                <Search className="w-3.5 h-3.5 text-rose-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={brandQuery}
+                  onChange={(e) => setBrandQuery(e.target.value)}
+                  placeholder={L('Filtrer une marque…', 'Filter a brand…', 'ابحث عن علامة…')}
+                  className="w-full pl-8 pr-3 py-2 text-xs bg-rose-50/40 border border-rose-200/80 rounded-lg focus:outline-hidden focus:border-[#9f0e4e]"
+                />
+              </div>
+              <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                {shownBrands.map((b) => (
+                  <label key={b.name} className={row}>
+                    <input
+                      type="checkbox"
+                      className={box}
+                      checked={selectedBrands.includes(b.name)}
+                      onChange={() => onToggleBrand?.(b.name)}
+                    />
+                    <span className="flex-1 truncate">{b.name}</span>
+                    <span className="text-xs text-slate-400">{b.count}</span>
+                  </label>
+                ))}
+                {shownBrands.length === 0 && (
+                  <span className="text-xs text-slate-400">{L('Aucune marque', 'No brand found', 'لا توجد علامة')}</span>
+                )}
+              </div>
+            </section>
+          </>
+        )}
+
+        {divider}
+
+        <section>
+          <div className={heading}>{L('Disponibilité', 'Availability', 'التوفر')}</div>
+          <label className={`${row} !text-emerald-700 font-semibold`}>
+            <input
+              type="checkbox"
+              className="w-4 h-4 accent-emerald-600 cursor-pointer shrink-0"
+              checked={stockFilter === 'in_stock'}
+              onChange={() => onSelectStockFilter(stockFilter === 'in_stock' ? 'all' : 'in_stock')}
+            />
+            {t.filterInStock}
+          </label>
+        </section>
+
+        {divider}
+
+        <section>
+          <div className={heading}>{L('Trier par', 'Sort by', 'ترتيب حسب')}</div>
+          <select
+            value={sortOption}
+            onChange={(e) => onSelectSortOption(e.target.value as SortOption)}
+            className="w-full bg-white border border-slate-200 text-slate-800 text-sm rounded-lg px-3 py-2 focus:outline-hidden focus:border-[#9f0e4e] cursor-pointer"
+          >
+            <option value="default">{L('Recommandés', 'Recommended', 'الموصى به')}</option>
+            <option value="price_asc">{t.sortByPriceAsc}</option>
+            <option value="price_desc">{t.sortByPriceDesc}</option>
+            <option value="stock_desc">🔥 Top Seller</option>
+            <option value="name_asc">Nom (A-Z)</option>
+          </select>
+        </section>
+
+        <button
+          type="button"
+          onClick={onResetFilters}
+          disabled={!hasActiveFilters}
+          className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 text-xs font-semibold text-slate-600 hover:border-[#9f0e4e] hover:text-[#9f0e4e] disabled:opacity-40 cursor-pointer"
+        >
+          ↻ {L('Réinitialiser les filtres', 'Reset filters', 'إعادة ضبط الفلاتر')}
+        </button>
       </div>
     );
   }

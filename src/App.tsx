@@ -3225,7 +3225,7 @@ export default function App() {
         />
 
         <div className="lg:flex lg:items-start lg:gap-6">
-          <aside className="hidden lg:block w-72 shrink-0 sticky top-4 self-start">
+          <aside className="hidden lg:block w-72 shrink-0 sticky top-4 self-start max-h-[calc(100vh-2rem)] overflow-y-auto">
           {/* Desktop left filter sidebar */}
           <ProductFilter
               variant="sidebar"
