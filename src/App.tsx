@@ -3870,6 +3870,7 @@ export default function App() {
           lang={currentLang}
           isFavorite={quickViewProduct ? favorites.includes(quickViewProduct.id) : false}
           onToggleFavorite={() => quickViewProduct && handleToggleFavorite(quickViewProduct.id)}
+          offers={offers}
         />
 
         {/* Interface Choice Modal (allows customer to choose between Showroom and Quick Order) */}

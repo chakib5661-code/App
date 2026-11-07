@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { X, Sparkles, Layers, Wrench, Package, MapPin, Check, Plus, Minus, XCircle, ShieldCheck, Lock, Heart, ZoomIn, ZoomOut, RotateCcw, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Product } from '../types';
+import { OffersConfig, Product } from '../types';
 import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { calculateDiscountedPrice } from '../utils/productUtils';
+import { effectiveTiers, getUnitPrice, resolveVolumeTier, volumeNudge } from '../utils/offers';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -17,6 +18,7 @@ interface ProductDetailModalProps {
   lang?: AppLanguage;
   isFavorite?: boolean;
   onToggleFavorite?: (productId: string) => void;
+  offers?: OffersConfig | null;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -29,6 +31,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   lang = 'ar',
   isFavorite = false,
   onToggleFavorite,
+  offers = null,
 }) => {
   const t = translations[lang];
   const isRtl = false; // Layout stays LTR for accessibility and right-handed reachability
@@ -263,7 +266,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     }
   };
 
-  const calculatedTotalPrice = discountedPriceDA * selectedQty;
+  // Volume pricing: unit price follows the quantity chosen
+  const unitPriceDA = getUnitPrice(product, selectedQty, offers);
+  const tiers = effectiveTiers(product, offers);
+  const appliedTier = resolveVolumeTier(product, selectedQty, offers).applied;
+  const nudge = isPricesVisible ? volumeNudge(product, selectedQty, offers) : null;
+  const calculatedTotalPrice = unitPriceDA * selectedQty;
   const containersCount = isExtrait ? (selectedQty / 100).toFixed(selectedQty % 100 === 0 ? 0 : 1) : null;
 
   return (
@@ -479,6 +487,41 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
               )}
 
+              {/* Volume price tiers */}
+              {isPricesVisible && tiers.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-black uppercase tracking-wider text-[#9f0e4e]">
+                    {lang === 'ar' ? 'أسعار الكمية' : lang === 'en' ? 'Volume prices' : 'Paliers dégressifs'}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[{ minQty: 1, priceDA: calculateDiscountedPrice(product.priceDA, product.discountPercent) }, ...tiers.slice(0, 2)].map((tier, i, arr) => {
+                      const next = arr[i + 1];
+                      const on = (appliedTier ? appliedTier.minQty === tier.minQty : i === 0);
+                      const unit = i === 0 ? tier.priceDA : getUnitPrice(product, tier.minQty, offers);
+                      const label = next ? `${tier.minQty}${isExtrait ? 'g' : ''} – ${next.minQty - 1}${isExtrait ? 'g' : ''}` : `${tier.minQty}${isExtrait ? 'g' : ''}+`;
+                      return (
+                        <button
+                          key={tier.minQty}
+                          type="button"
+                          onClick={() => {
+                            const q = Math.min(availableStock > 0 ? availableStock : tier.minQty, Math.max(1, tier.minQty));
+                            setSelectedQty(q);
+                            setQtyInputValue(String(q));
+                          }}
+                          className={`rounded-xl border p-2 text-left cursor-pointer transition ${
+                            on ? 'border-[#9f0e4e] border-2 bg-rose-50' : 'border-rose-200/80 bg-white hover:border-rose-300'
+                          }`}
+                        >
+                          <div className="text-[10px] font-bold text-slate-600">{label}</div>
+                          <div className="text-sm font-black text-slate-900">{formatDZD(unit)}</div>
+                          <div className="text-[10px] text-slate-500">{isExtrait ? '/ g' : '/ u'}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Localized Description */}
               <div className="text-xs text-slate-600 leading-relaxed space-y-1 border-t border-slate-100 pt-2.5">
                 <h4 className="font-bold text-slate-900 text-xs">
@@ -486,6 +529,54 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </h4>
                 <p className="text-slate-600">{localized.description}</p>
               </div>
+
+              {/* Fiche olfactive (from the tags import) */}
+              {product.olfactive && (
+                <div className="rounded-2xl border border-rose-100 bg-rose-50/40 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-black text-slate-900">
+                      {lang === 'ar' ? 'البطاقة العطرية' : lang === 'en' ? 'Fragrance profile' : 'Fiche olfactive'}
+                    </h4>
+                    {product.olfactive.suggested && (
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">
+                        {lang === 'en' ? 'Suggestion' : 'Suggestion'}
+                      </span>
+                    )}
+                  </div>
+                  {(product.olfactive.top || product.olfactive.middle || product.olfactive.base) ? (
+                    <div className="grid grid-cols-3 gap-1.5 text-[11px] leading-snug">
+                      {[
+                        [lang === 'en' ? 'TOP' : 'TÊTE', product.olfactive.top],
+                        [lang === 'en' ? 'HEART' : 'CŒUR', product.olfactive.middle],
+                        [lang === 'en' ? 'BASE' : 'FOND', product.olfactive.base],
+                      ].map(([label, val]) => (
+                        <div key={label as string} className="bg-white rounded-lg p-2 border border-rose-100">
+                          <div className="text-[10px] font-black tracking-wider text-[#9f0e4e]">{label}</div>
+                          <div className="text-slate-700 mt-0.5">{(val as string) || '—'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : product.olfactive.notes ? (
+                    <div className="text-[11px] text-slate-700">{product.olfactive.notes}</div>
+                  ) : null}
+                  {product.olfactive.accords && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {product.olfactive.accords.split(',').map((a) => a.trim()).filter(Boolean).map((a) => (
+                        <span key={a} className="text-[11px] font-semibold text-[#9f0e4e] bg-rose-100 rounded-full px-2.5 py-0.5">{a}</span>
+                      ))}
+                    </div>
+                  )}
+                  {(product.olfactive.season || product.olfactive.time) && (
+                    <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold text-slate-700">
+                      {product.olfactive.season && <span className="border border-rose-200 rounded-lg px-2 py-0.5 bg-white">❄ {product.olfactive.season}</span>}
+                      {product.olfactive.time && <span className="border border-rose-200 rounded-lg px-2 py-0.5 bg-white">☾ {product.olfactive.time}</span>}
+                    </div>
+                  )}
+                  {product.olfactive.description && (
+                    <p className="text-[11px] text-slate-600 leading-relaxed">{product.olfactive.description}</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Bottom Action Bar: Price, Presets, Quantity, and Add to Preorder */}
@@ -527,7 +618,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     ) : (
                       <div className="flex items-baseline gap-1">
                         <span className="text-xl sm:text-2xl font-black text-slate-950">
-                          {formatDZD(product.priceDA)}
+                          {formatDZD(unitPriceDA)}
                         </span>
                         {isExtrait && <span className="text-xs font-bold text-[#880e4f]">/ 1g</span>}
                       </div>
@@ -545,6 +636,30 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       </span>
                     )}
                   </div>
+                </div>
+              )}
+
+              {nudge && !isOutOfStock && !isAllInCart && (
+                <div className="mb-2.5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] sm:text-xs text-emerald-900">
+                  <span aria-hidden="true">💡</span>
+                  <span className="flex-1">
+                    <strong>{lang === 'ar' ? 'نصيحة:' : lang === 'en' ? 'Tip:' : 'Conseil :'}</strong>{' '}
+                    {lang === 'en'
+                      ? `add ${nudge.missing}${isExtrait ? 'g' : ''} to save ${formatDZD(nudge.savingDA)}.`
+                      : `ajoutez ${nudge.missing}${isExtrait ? ' g' : ''} pour économiser ${formatDZD(nudge.savingDA)}.`}
+                  </span>
+                  {availableStock >= nudge.minQty && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedQty(nudge.minQty);
+                        setQtyInputValue(String(nudge.minQty));
+                      }}
+                      className="shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1 font-bold text-white cursor-pointer hover:bg-emerald-700"
+                    >
+                      {lang === 'en' ? `Go to ${nudge.minQty}` : `Passer à ${nudge.minQty}`}
+                    </button>
+                  )}
                 </div>
               )}
 
