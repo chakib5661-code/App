@@ -755,22 +755,30 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         throw new Error(result.errors?.[0] || 'Aucun article valide détecté dans le fichier.');
       }
 
-      const parsed = result.products;
-
-      // User directive:
-      // "about the import excel we will erace all the inventory of Extrait and remplace it with the new one"
-      // "about 'flacon' we will separate them from the excel import and allow to add them manually"
-      // All imported lines become Extraits
-      let newExtraits: Product[] = parsed.map((newP) => {
-        const existing = products.find((ex) => ex.code === newP.code && ex.family === 'Extrait');
-        return {
-          ...newP,
-          family: 'Extrait' as const,
-          unit: newP.unit || '1g (Contenant 100g)',
-          imageUrl: existing?.imageUrl || newP.imageUrl || '/tulip-extrait-default.jpg',
-          lastUpdated: new Date().toISOString(),
-        };
-      });
+      // Rule: refs starting with "P" = Extraits (replace whole Extrait catalogue).
+      // Refs starting with "F" = Flacons / Accessoires: only the STOCK of the
+      // already-existing items (same ref) is updated; unmatched F rows are skipped.
+      const isP = (c?: string) => /^\s*P/i.test(c || '');
+      const isF = (c?: string) => /^\s*F/i.test(c || '');
+      const parsedP = result.products.filter((x) => isP(x.code));
+      const parsedF = result.products.filter((x) => isF(x.code));
+      const ignoredCount = result.products.length - parsedP.length - parsedF.length;
+      if (parsedP.length === 0 && parsedF.length === 0) {
+        throw new Error('Aucune référence commençant par "P" (extraits) ou "F" (flacons/accessoires) détectée.');
+      }
+      const normCode = (c?: string) => (c || '').trim().toLowerCase();
+      let newExtraits: Product[] = parsedP.length === 0
+        ? products.filter((p) => p.family === 'Extrait')
+        : parsedP.map((newP) => {
+            const existing = products.find((ex) => ex.code === newP.code && ex.family === 'Extrait');
+            return {
+              ...newP,
+              family: 'Extrait' as const,
+              unit: newP.unit || '1g (Contenant 100g)',
+              imageUrl: existing?.imageUrl || newP.imageUrl || '/tulip-extrait-default.jpg',
+              lastUpdated: new Date().toISOString(),
+            };
+          });
 
       // Automatically associate each extrait with its image in Vercel Blob folder
       let matchedBlobCount = 0;
@@ -790,19 +798,27 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         console.warn('[AdminPortal] Vercel Blob auto-association note:', blobErr);
       }
 
-      // Preserve all existing manually added Flacons and Accessories
-      const existingFlacons = products.filter((p) => p.family === 'Flacon');
-      const existingAccessories = products.filter((p) => p.family === 'Accessoire');
-      const updated = [...existingFlacons, ...existingAccessories, ...newExtraits];
-
+      // Update stock of existing Flacons / Accessoires from the F rows
+      const fStock = new Map(parsedF.map((x) => [normCode(x.code), x.stock]));
+      let fUpdated = 0;
+      const nonExtraits = products
+        .filter((p) => p.family !== 'Extrait')
+        .map((p) => {
+          const st = fStock.get(normCode(p.code));
+          if (st === undefined) return p;
+          fUpdated++;
+          return { ...p, stock: st, lastUpdated: new Date().toISOString() };
+        });
+      const fSkipped = parsedF.length - fUpdated;
+      const updated = [...nonExtraits, ...newExtraits];
       onUpdateProducts(updated);
 
       setExcelSuccess(
-        `${newExtraits.length} Extraits importés avec succès${
+        `${parsedP.length} Extraits (réf. P) importés${
           matchedBlobCount > 0
-            ? ` (${matchedBlobCount} photos associées automatiquement depuis le dossier Vercel Blob "${storeSettings?.vercelBlobFolderName || blobFolderName || 'extraits'}")`
+            ? ` (${matchedBlobCount} photos associées depuis le dossier Vercel Blob "${storeSettings?.vercelBlobFolderName || blobFolderName || 'extraits'}")`
             : ''
-        }. L'ancien inventaire d'extraits a été remplacé, et vos ${existingFlacons.length} modèles de flacons et ${existingAccessories.length} accessoires restent conservés.`
+        }. Stock mis à jour pour ${fUpdated} flacons/accessoires (réf. F)${fSkipped > 0 ? `, ${fSkipped} lignes F ignorées (aucun produit avec le même code)` : ''}${ignoredCount > 0 ? `, ${ignoredCount} lignes ignorées (ni P ni F)` : ''}.`
       );
     } catch (err: any) {
       setExcelError(err.message || "Erreur lors de l'analyse du fichier Excel.");
