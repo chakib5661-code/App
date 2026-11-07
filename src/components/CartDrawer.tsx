@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { TrustStrip } from './TrustStrip';
 import {
   X,
   Trash2,
@@ -19,8 +20,10 @@ import {
   Sparkles,
   Package,
 } from 'lucide-react';
-import { Product, CartItem, SavedPreorder } from '../types';
-import { calculateDiscountedPrice } from '../utils/productUtils';
+import { Product, CartItem, SavedPreorder, OffersConfig, LoyaltyTier } from '../types';
+import { calculateDiscountedPrice, isProductTopSeller } from '../utils/productUtils';
+import { RewardLadder } from './RewardLadder';
+import { computeCart, defaultAddQuantity, getUnitPrice, suggestProducts, volumeNudge } from '../utils/offers';
 import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
@@ -43,6 +46,9 @@ interface CartDrawerProps {
   onDeleteSavedPreorder: (id: string) => void;
   allProducts?: Product[];
   onAddToCart?: (product: Product, quantityToAdd: number) => void;
+  offers?: OffersConfig | null;
+  popular?: Record<string, number>;
+  loyaltyTier?: LoyaltyTier | null;
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({
@@ -63,6 +69,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onDeleteSavedPreorder,
   allProducts = [],
   onAddToCart,
+  offers = null,
+  popular,
+  loyaltyTier = null,
 }) => {
   const t = translations[lang];
   const isRtl = false; // Layout stays LTR for accessibility and right-handed reachability
@@ -93,7 +102,27 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     ); // Show all visible in-stock accessories without truncation
   }, [allProducts]);
 
+  const calc = React.useMemo(
+    () => computeCart(items.filter((i) => i && i.product && typeof i.quantity === 'number'), offers, loyaltyTier),
+    [items, offers, loyaltyTier]
+  );
+  const suggestions = React.useMemo(
+    () => suggestProducts(items.filter((i) => i && i.product), allProducts, offers, isProductTopSeller, popular),
+    [items, allProducts, offers, popular]
+  );
+  const openBundles = React.useMemo(() => {
+    if (!offers || !offers.bundles.enabled) return [];
+    return offers.bundles.items.filter((b) => {
+      if (!b.isActive || !b.items.length) return false;
+      const resolved = b.items.map((bi) => allProducts.find((p) => p.id === bi.productId));
+      if (resolved.some((p) => !p || p.isHidden || p.stock < 1)) return false;
+      return !calc.bundles.some((applied) => applied.id === b.id);
+    });
+  }, [offers, allProducts, calc.bundles]);
+  const tr = (ar: string, fr: string) => (lang === 'ar' ? ar : fr);
+
   const handleProceedClick = (action: 'preorder' | 'proforma') => {
+    if (action === 'preorder' && !calc.minOrderMet) return;
     const hasAccessories = items.some((item) => item.product?.family === 'Accessoire');
     if (!hasAccessories && availableAccessories.length > 0) {
       setUpsellNextAction(action);
@@ -130,15 +159,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   const getItemUnitPrice = (item: CartItem) => {
     if (!item || !item.product) return 0;
-    return calculateDiscountedPrice(item.product.priceDA, item.product.discountPercent);
+    return getUnitPrice(item.product, item.quantity || 0, offers);
   };
 
   const validItems = items.filter((item) => item && item.product && typeof item.quantity === 'number');
 
-  const totalAmountDA = validItems.reduce(
-    (sum, item) => sum + getItemUnitPrice(item) * (item.quantity || 0),
-    0
-  );
+  const totalAmountDA = calc.totalDA;
 
   const handleSaveForLater = () => {
     if (items.length === 0) return;
@@ -172,26 +198,21 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           isRtl ? 'left-0 sm:pr-8 md:pr-10' : 'right-0 sm:pl-8 md:pl-10'
         } max-w-full w-full sm:w-auto flex`}
       >
-        <div className="w-full sm:w-[480px] sm:max-w-md bg-white shadow-2xl flex flex-col justify-between h-full max-h-screen">
+        <div className="w-full sm:w-[480px] sm:max-w-md bg-white shadow-2xl flex flex-col justify-between h-[100dvh] sm:h-full max-h-[100dvh]">
           {/* Header */}
-          <div className="p-4 bg-gradient-to-r from-[#500428] via-[#70083b] to-[#9f0e4e] text-white flex items-center justify-between border-b border-[#500428] shadow-xs">
+          <div className="px-4 pb-2.5 pt-[max(10px,env(safe-area-inset-top,0px))] bg-gradient-to-r from-[#500428] via-[#70083b] to-[#9f0e4e] text-white flex items-center justify-between border-b border-[#500428] shadow-xs shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-xl bg-white/20 text-white font-black border border-white/25 shadow-xs">
                 <ShoppingBag className="w-5 h-5 text-rose-100" />
               </div>
-              <div>
-                <h2 className="text-base font-bold text-white tracking-tight">{t.cartTitle}</h2>
-                <p className="text-xs text-rose-200">
-                  {items.length} {t.orderItemsCount}
-                </p>
-              </div>
+              <h2 className="text-base font-bold text-white tracking-tight">{t.cartTitle}</h2>
             </div>
 
             <div className="flex items-center">
               <button
                 type="button"
                 onClick={onClose}
-                className="p-1.5 rounded-lg text-rose-200 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                className="w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-rose-200 hover:text-white hover:bg-white/10 transition cursor-pointer"
                 aria-label="Fermer"
                 title="Fermer (Échap)"
               >
@@ -201,11 +222,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           </div>
 
           {/* Navigation Tabs between Current Cart & Saved Pre-orders */}
-          <div className="flex border-b border-rose-100 bg-rose-50/70 p-1">
+          <div className="flex border-b border-rose-100 bg-rose-50/70 p-1 shrink-0">
             <button
               type="button"
               onClick={() => setActiveTab('cart')}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer ${
+              className={`flex-1 py-3 sm:py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 activeTab === 'cart'
                   ? 'bg-white text-[#9f0e4e] shadow-xs font-black'
                   : 'text-slate-600 hover:text-[#70083b]'
@@ -219,7 +240,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('saved')}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer ${
+              className={`flex-1 py-3 sm:py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 activeTab === 'saved'
                   ? 'bg-white text-[#9f0e4e] shadow-xs font-black'
                   : 'text-slate-600 hover:text-[#70083b]'
@@ -252,9 +273,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             </div>
           )}
 
+          {/* Reward ladder and minimum order, pinned at the top of the cart */}
+          {activeTab === 'cart' && items.length > 0 && isPricesVisible && offers && (
+            <RewardLadder calc={calc} offers={offers} lang={lang} variant="cart" />
+          )}
+
           {/* TAB 1: ACTIVE CART ITEMS */}
           {activeTab === 'cart' && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 space-y-2">
               {validItems.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
                   <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
@@ -276,12 +302,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs">
-                    <span className="text-slate-500 font-medium">{t.quickOrderSummary}</span>
+                  <div className="flex items-center justify-end text-xs -mb-2">
                     <button
                       type="button"
                       onClick={onClearCart}
-                      className="text-rose-600 hover:text-rose-700 font-medium flex items-center gap-1 hover:underline cursor-pointer"
+                      className="h-10 px-1 text-rose-600 hover:text-rose-700 font-medium flex items-center gap-1 hover:underline cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       {t.clearCartBtn}
@@ -296,21 +321,25 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       const maxAllowed = product.stock;
                       const isMaxReached = quantity >= maxAllowed;
                       const loc = getProductLocalizedDetails(product, lang);
+                      const unit = getItemUnitPrice({ product, quantity });
+                      const nudge = isPricesVisible ? volumeNudge(product, quantity, offers) : null;
+                      const fallbackImg =
+                        product.family === 'Extrait'
+                          ? '/tulip-extrait-default.jpg'
+                          : product.family === 'Accessoire'
+                          ? 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600'
+                          : 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=600';
 
                       return (
                         <div
                           key={product.id}
-                          className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex gap-3 relative group hover:border-slate-300 transition"
+                          className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex gap-3 relative hover:border-slate-300 transition"
                         >
                           <img
                             src={
                               product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
                                 ? product.imageUrl
-                                : product.family === 'Extrait'
-                                ? '/tulip-extrait-default.jpg'
-                                : product.family === 'Accessoire'
-                                ? 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600'
-                                : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=600')
+                                : fallbackImg
                             }
                             alt={loc.name}
                             className="w-16 h-16 rounded-xl object-cover border border-slate-200 bg-white shrink-0"
@@ -318,130 +347,63 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                             onError={(e) => {
                               const target = e.currentTarget as HTMLImageElement;
                               target.onerror = null;
-                              target.src =
-                                product.family === 'Extrait'
-                                  ? '/tulip-extrait-default.jpg'
-                                  : product.family === 'Accessoire'
-                                  ? 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600'
-                                  : 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=600';
+                              target.src = fallbackImg;
                             }}
                           />
 
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-1">
                               <div className="min-w-0">
-                                <span className="font-mono text-[10px] text-slate-500 block">
-                                  {product.code}
-                                </span>
-                                <h4 className="text-xs font-bold text-slate-900 truncate">
-                                  {loc.name}
-                                </h4>
+                                <span className="font-mono text-[10px] text-slate-500 block">{product.code}</span>
+                                <h4 className="text-sm font-bold text-slate-900 leading-snug break-words">{loc.name}</h4>
                               </div>
                               <button
                                 type="button"
                                 onClick={() => onRemoveItem(product.id)}
-                                className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition cursor-pointer"
+                                className="shrink-0 -mr-1.5 -mt-1.5 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
                                 title="Supprimer"
+                                aria-label="Supprimer"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
 
-                            <div className="mt-1 flex items-center gap-2">
-                              <span
-                                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                                  isExtrait
-                                    ? 'bg-amber-100 text-amber-900'
-                                    : product.family === 'Accessoire'
-                                    ? 'bg-teal-100 text-teal-900'
-                                    : 'bg-indigo-100 text-indigo-900'
-                                }`}
-                              >
-                                {isExtrait
-                                  ? t.extraitsTitle.split(' ')[0]
-                                  : product.family === 'Accessoire'
-                                  ? (t.accessoriesTitle ? t.accessoriesTitle.split(' ')[0] : 'Accessoires')
-                                  : t.flaconsTitle.split(' ')[0]}
-                              </span>
-                              {isExtrait && (
-                                <span className="text-amber-800 text-[10px]">
-                                  (100g)
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="mt-2 flex items-center justify-between">
-                              {/* Quantity control */}
-                              <div className="flex items-center border border-slate-300 rounded-lg bg-white">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center border border-slate-300 rounded-xl bg-white overflow-hidden">
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    onUpdateQuantity(
-                                      product.id,
-                                      Math.max(1, quantity - step)
-                                    )
-                                  }
-                                  className="px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                                  onClick={() => onUpdateQuantity(product.id, Math.max(1, quantity - step))}
+                                  className="w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
                                   aria-label="Diminuer"
                                 >
-                                  <Minus className="w-3 h-3" />
+                                  <Minus className="w-3.5 h-3.5" />
                                 </button>
-
-                                <div className="px-1.5 text-center">
-                                  <span className="text-xs font-bold text-slate-900">
-                                    {quantity}
-                                    {isExtrait ? 'g' : ''}
-                                  </span>
-                                  {isExtrait && (
-                                    <span className="block text-[9px] text-slate-400 leading-none">
-                                      {(quantity / 100).toFixed(
-                                        quantity % 100 === 0 ? 0 : 1
-                                      )}{' '}
-                                      fl.
-                                    </span>
-                                  )}
-                                </div>
-
+                                <span className="min-w-[52px] text-center text-sm font-black text-slate-900 font-mono">
+                                  {quantity}
+                                  {isExtrait ? ' g' : ''}
+                                </span>
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    onUpdateQuantity(
-                                      product.id,
-                                      Math.min(maxAllowed, quantity + step)
-                                    )
-                                  }
+                                  onClick={() => onUpdateQuantity(product.id, Math.min(maxAllowed, quantity + step))}
                                   disabled={isMaxReached}
-                                  className="px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                                  className="w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center text-slate-600 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
                                   aria-label="Augmenter"
                                 >
-                                  <Plus className="w-3 h-3" />
+                                  <Plus className="w-3.5 h-3.5" />
                                 </button>
                               </div>
 
-                              {/* Line total or Hidden Price */}
                               <div className="text-right">
                                 {isPricesVisible ? (
                                   <>
-                                    <span className="text-xs font-black text-slate-900">
-                                      {formatDZD(
-                                        getItemUnitPrice({ product, quantity }) *
-                                          quantity
-                                      )}
-                                    </span>
-                                    {product.discountPercent && product.discountPercent > 0 ? (
-                                      <span className="block text-[10px] text-rose-600 font-bold">
-                                        -{product.discountPercent}% (
-                                        {formatDZD(
-                                          getItemUnitPrice({ product, quantity })
-                                        )}{' '}
-                                        {isExtrait ? '/ 1g' : '/ u'})
-                                      </span>
-                                    ) : (
-                                      <span className="block text-[10px] text-slate-500">
-                                        ({formatDZD(product.priceDA)}{' '}
-                                        {isExtrait ? '/ 1g' : '/ u'})
-                                      </span>
+                                    <span className="text-sm font-black text-slate-900 font-mono">{formatDZD(unit * quantity)}</span>
+                                    {unit < product.priceDA && (
+                                      <span className="block text-[11px] text-slate-400 line-through font-mono">{formatDZD(product.priceDA * quantity)}</span>
                                     )}
+                                    <span className={`block text-[10px] ${product.discountPercent && product.discountPercent > 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+                                      {product.discountPercent && product.discountPercent > 0 ? `-${product.discountPercent}% ` : ''}
+                                      {formatDZD(unit)}{isExtrait ? ' /g' : ' /u'}
+                                    </span>
                                   </>
                                 ) : (
                                   <span className="text-[11px] font-semibold text-amber-700 flex items-center justify-end gap-1">
@@ -458,22 +420,91 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                                 Stock max atteint
                               </div>
                             )}
+
+                            {nudge && nudge.minQty <= maxAllowed && (
+                              <div className="mt-2 flex items-center justify-between gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                                <span className="leading-snug">
+                                  {tr('أضف', 'Ajoutez')} <b><bdi dir="ltr">+{nudge.missing}{isExtrait ? ' g' : ' pcs'}</bdi></b> :{' '}
+                                  <bdi dir="ltr">{formatDZD(nudge.nextUnit)}{isExtrait ? '/g' : ''}</bdi> · {tr('توفر', 'économie')}{' '}
+                                  <b><bdi dir="ltr">{formatDZD(nudge.savingDA)}</bdi></b>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => onUpdateQuantity(product.id, nudge.minQty)}
+                                  className="shrink-0 h-9 px-3 rounded-lg border border-emerald-600 text-emerald-700 font-bold cursor-pointer"
+                                >
+                                  {tr(`إلى ${nudge.minQty}`, `Passer à ${nudge.minQty}`)}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Stock Reservation Info Box */}
-                  <div className="p-3 bg-rose-50/70 rounded-xl border border-rose-200 text-xs text-slate-800 flex items-start gap-2">
-                    <ShieldCheck className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold text-slate-950">Garantie Réservation 48H :</p>
-                      <p className="text-[11px] text-slate-600 leading-relaxed mt-0.5">
-                        Dès l'envoi de votre bon ou demande de proforma, le stock est réservé pendant 48 heures.
-                      </p>
+                  {/* Offers: bundles ready to add, and cross-sell suggestions */}
+                  {onAddToCart && openBundles.length > 0 && (
+                    <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/70 space-y-2">
+                      <div className="text-xs font-black text-amber-900 flex items-center gap-1.5">
+                        <Package className="w-3.5 h-3.5" />
+                        {tr('عروض الباقات', 'Packs avantageux')}
+                      </div>
+                      {openBundles.slice(0, 3).map((b) => (
+                        <div key={b.id} className="flex items-center justify-between gap-2 text-xs">
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-900 block truncate">{b.name}</span>
+                            <span className="text-[10px] text-amber-800">-{b.discountPercent}%</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              b.items.forEach((bi) => {
+                                const prod = allProducts.find((p) => p.id === bi.productId);
+                                const have = items.find((i) => i.product.id === bi.productId)?.quantity || 0;
+                                if (prod && have < bi.quantity) onAddToCart(prod, bi.quantity - have);
+                              })
+                            }
+                            className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] cursor-pointer"
+                          >
+                            {tr('أضف الباقة', 'Ajouter le pack')}
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  </div>
+                  )}
+
+                  {onAddToCart && suggestions.length > 0 && (
+                    <div className="p-3 rounded-xl border border-rose-200 bg-white space-y-2">
+                      <div className="text-xs font-black text-[#70083b] flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-[#9f0e4e]" />
+                        {tr('أكمل طلبك', 'Complétez votre commande')}
+                      </div>
+                      {suggestions.map((sp) => {
+                        const qty = defaultAddQuantity(sp);
+                        const d = getProductLocalizedDetails(sp, lang);
+                        return (
+                          <div key={sp.id} className="flex items-center justify-between gap-2 text-xs">
+                            <div className="min-w-0">
+                              <span className="font-bold text-slate-900 block truncate">{d.name}</span>
+                              <span className="text-[10px] text-slate-500 block truncate">
+                                {sp.family === 'Extrait' ? `${qty} g` : sp.unit}
+                                {isPricesVisible && ` · ${formatDZD(getUnitPrice(sp, qty, offers) * qty)}`}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => onAddToCart(sp, qty)}
+                              className="shrink-0 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-[#70083b] border border-rose-200 font-bold text-[11px] cursor-pointer"
+                            >
+                              + {tr('أضف', 'Ajouter')}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                 </>
               )}
             </div>
@@ -611,25 +642,29 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
           {/* FOOTER & CHECKOUT ACTION (ONLY RELEVANT FOR ACTIVE CART TAB) */}
           {activeTab === 'cart' && items.length > 0 && (
-            <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
-              <div className="flex items-center justify-between text-xs text-slate-600">
-                <span>{t.quickOrderSummary} :</span>
-                <span className="font-bold text-slate-900">{items.length} réf.</span>
-              </div>
+            <div className="px-4 pt-2.5 pb-[max(12px,env(safe-area-inset-bottom,0px))] bg-slate-50 border-t border-slate-200 space-y-1.5 shrink-0">
+
+              {isPricesVisible && calc.discountDA > 0 && (
+                <div className="text-xs space-y-1 text-slate-600">
+                  <div className="flex justify-between"><span>{tr('المجموع قبل التخفيض', 'Sous-total')}</span><span>{formatDZD(calc.subtotalDA)}</span></div>
+                  {calc.bundles.map((b) => (
+                    <div key={b.id} className="flex justify-between text-emerald-700 font-semibold"><span>Pack {b.name} ×{b.sets}</span><span>-{formatDZD(b.amountDA)}</span></div>
+                  ))}
+                  {calc.orderDiscountDA > 0 && (
+                    <div className="flex justify-between text-emerald-700 font-semibold">
+                      <span>
+                        {calc.orderPercentSource === 'loyalty' ? `${tr('الولاء', 'Fidélité')} ${calc.loyaltyTier?.name || ''}` : tr('مكافأة الطلب', 'Palier commande')} (-{calc.orderPercent}%)
+                      </span>
+                      <span>-{formatDZD(calc.orderDiscountDA)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {isPricesVisible ? (
-                <div className="flex items-baseline justify-between pt-2 border-t border-slate-200">
-                  <div>
-                    <span className="text-xs text-slate-600 block">
-                      {t.totalEstimation} :
-                    </span>
-                    <span className="text-xl font-black text-slate-950">
-                      {formatDZD(totalAmountDA)}
-                    </span>
-                  </div>
-                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">
-                    Tarif Grossiste Validé
-                  </span>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm text-slate-600">{t.totalEstimation}</span>
+                  <span className="text-2xl font-black text-slate-950 font-mono">{formatDZD(totalAmountDA)}</span>
                 </div>
               ) : (
                 <div className="p-3 bg-rose-50/80 rounded-2xl border border-rose-200/90 text-xs space-y-2">
@@ -648,19 +683,21 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       </button>
                     )}
                   </div>
-                  <p className="text-[11px] text-[#880e4f] leading-relaxed">
+                  <p className="max-sm:hidden text-[11px] text-[#880e4f] leading-relaxed">
                     {t.proformaNotice}
                   </p>
                 </div>
               )}
 
+              <TrustStrip lang={lang} />
+
               {/* USER DIRECTIVE: SAVE FOR LATER BUTTON PLACED ABOVE SUBMIT BUTTON */}
-              <div className="pt-1 border-t border-slate-200">
+              <div>
                 {!isNamingDraft ? (
                   <button
                     type="button"
                     onClick={() => setIsNamingDraft(true)}
-                    className="w-full py-2 px-3 rounded-xl bg-rose-50/60 hover:bg-rose-100/70 text-[#70083b] font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer border border-rose-200/80"
+                    className="w-full min-h-[36px] px-3 rounded-xl text-[#70083b] hover:bg-rose-100/70 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
                   >
                     <Bookmark className="w-3.5 h-3.5 text-[#9f0e4e]" />
                     <span>{t.saveForLaterBtn}</span>
@@ -705,7 +742,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   id="btn-proceed-preorder"
                   type="button"
                   onClick={() => handleProceedClick('preorder')}
-                  className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 text-white font-black text-sm flex items-center justify-center gap-2 transition shadow-lg hover:shadow-xl cursor-pointer"
+                  disabled={!calc.minOrderMet}
+                  className="disabled:opacity-50 disabled:cursor-not-allowed w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#70083b] via-[#9f0e4e] to-[#c2185b] hover:opacity-95 text-white font-black text-sm flex items-center justify-center gap-2 transition shadow-lg hover:shadow-xl cursor-pointer"
                 >
                   <span>{t.proceedToPreorderBtn}</span>
                   <ArrowRight className="w-4 h-4" />
@@ -737,8 +775,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
               )}
 
-              <p className="text-[11px] text-center text-slate-500">
-                Génération instantanée du bon officiel ou proforma en PDF
+              <p className="text-xs text-center text-slate-500">
+                {tr('يُحجز المخزون 48 ساعة بعد الإرسال', 'Stock réservé 48 h dès l’envoi du bon')}
               </p>
             </div>
           )}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Search,
   Sparkles,
@@ -16,11 +16,14 @@ import {
   Heart,
   Flame,
 } from 'lucide-react';
-import { Product, ProductFamily, CartItem } from '../types';
+import { Product, ProductFamily, CartItem, OffersConfig } from '../types';
+import { getUnitPrice, volumeNudge } from '../utils/offers';
 import { formatDZD } from '../utils/formatDZD';
 import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
-import { isProductTopSeller, calculateDiscountedPrice } from '../utils/productUtils';
+import { isProductTopSeller, calculateDiscountedPrice, normalizeGender, type GenderKey } from '../utils/productUtils';
+import { BrandGenderFilters } from './BrandGenderFilters';
+import { ProductFilter } from './ProductFilter';
 
 interface QuickOrderViewProps {
   products: Product[];
@@ -39,6 +42,21 @@ interface QuickOrderViewProps {
   favorites?: string[];
   onToggleFavorite?: (productId: string) => void;
   isLoading?: boolean;
+  offers?: OffersConfig | null;
+  // Gender / brand / sale filters (shared with the catalogue)
+  genderFilter?: GenderKey | 'all';
+  onSelectGender?: (g: GenderKey | 'all') => void;
+  genderCounts?: { men: number; women: number; unisex: number };
+  brandOptions?: { name: string; count: number }[];
+  selectedBrands?: string[];
+  onToggleBrand?: (brand: string) => void;
+  showOnlyClearance?: boolean;
+  onToggleOnlyClearance?: () => void;
+  clearanceCount?: number;
+  styleCounts?: { Niche: number; Designer: number; Arabic: number };
+  selectedStyles?: string[];
+  onToggleStyle?: (style: string) => void;
+  onResetFilters?: () => void;
 }
 
 export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
@@ -56,7 +74,21 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
   onSelectFamily: propOnSelectFamily,
   favorites = [],
   onToggleFavorite,
+  offers = null,
   isLoading = false,
+  genderFilter = 'all',
+  onSelectGender,
+  genderCounts = { men: 0, women: 0, unisex: 0 },
+  brandOptions = [],
+  selectedBrands = [],
+  onToggleBrand,
+  showOnlyClearance = false,
+  onToggleOnlyClearance,
+  clearanceCount = 0,
+  styleCounts = { Niche: 0, Designer: 0, Arabic: 0 },
+  selectedStyles = [],
+  onToggleStyle,
+  onResetFilters,
 }) => {
   const t = translations[lang];
   const isRtl = false; // Layout stays LTR for accessibility and right-handed reachability
@@ -84,7 +116,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       }
     }, 120);
     return () => clearTimeout(timeout);
-  }, [search, activeFamily, inStockOnly, favoritesOnly, topSellersOnly]);
+  }, [search, activeFamily, inStockOnly, favoritesOnly, topSellersOnly, genderFilter, selectedBrands, selectedStyles, showOnlyClearance]);
 
   const topSellersCount = useMemo(() => products.filter(isProductTopSeller).length, [products]);
   const handleSelectFamily = (fam: ProductFamily | 'all') => {
@@ -115,6 +147,13 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       if (topSellersOnly && !isProductTopSeller(p)) return false;
       if (activeFamily !== 'all' && p.family !== activeFamily) return false;
       if (inStockOnly && p.stock <= 0) return false;
+      if (genderFilter !== 'all') {
+        const g = normalizeGender(p.gender);
+        if (g !== genderFilter && !(g === 'unisex' && genderFilter !== 'unisex')) return false;
+      }
+      if (selectedBrands.length > 0 && !selectedBrands.includes((p.brand || '').trim())) return false;
+      if (selectedStyles.length > 0 && !selectedStyles.includes((p.style || '').trim())) return false;
+      if (showOnlyClearance && !(p.clearance || (p.discountPercent || 0) > 0)) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
         const localized = getProductLocalizedDetails(p, lang);
@@ -125,7 +164,33 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       }
       return true;
     });
-  }, [products, activeFamily, inStockOnly, search, lang, favoritesOnly, favorites, topSellersOnly]);
+  }, [products, activeFamily, inStockOnly, search, lang, favoritesOnly, favorites, topSellersOnly, genderFilter, selectedBrands, selectedStyles, showOnlyClearance]);
+
+  // Render one layout (phone cards or desktop table) and only a first slice of rows; more load as the user scrolls
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const on = () => setIsDesktop(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  const PAGE_STEP = 30;
+  const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
+  useEffect(() => setVisibleCount(PAGE_STEP), [filteredProducts]);
+  const shownProducts = useMemo(() => filteredProducts.slice(0, visibleCount), [filteredProducts, visibleCount]);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || visibleCount >= filteredProducts.length) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) setVisibleCount((c) => c + PAGE_STEP * 2);
+      },
+      { rootMargin: '800px' }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visibleCount, filteredProducts.length]);
 
   const getRowQty = (product: Product) => {
     if (rowQuantities[product.id] !== undefined) {
@@ -188,23 +253,77 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
     }
   };
 
+  const familyCounts = useMemo(() => {
+    const c = { all: 0, Extrait: 0, Flacon: 0, Accessoire: 0 };
+    products.forEach((p) => {
+      if (p.isHidden) return;
+      c.all += 1;
+      c[p.family] += 1;
+    });
+    return c;
+  }, [products]);
+  const resetAllFilters = () => {
+    onResetFilters?.();
+    handleSelectFamily('all');
+    setInStockOnly(false);
+    setFavoritesOnly(false);
+    setTopSellersOnly(false);
+    setSearch('');
+  };
+  const hasSidebar = !!(onSelectGender && onToggleBrand && onToggleOnlyClearance);
+
   const totalCartCount = cart.reduce((sum, item) => sum + (item?.quantity || 0), 0);
 
   return (
     <div className="min-h-screen bg-[#faf7f9] py-4 sm:py-6 pb-28" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
+        <div className="lg:flex lg:items-start lg:gap-6">
+          {hasSidebar && (
+            <aside className="hidden lg:block w-72 shrink-0 sticky top-4 self-start max-h-[calc(100vh-2rem)] overflow-y-auto">
+              <ProductFilter
+                variant="sidebar"
+                hideSort
+                searchQuery={search}
+                onSearchChange={setSearch}
+                selectedFamily={activeFamily}
+                onSelectFamily={handleSelectFamily}
+                stockFilter={inStockOnly ? 'in_stock' : 'all'}
+                onSelectStockFilter={(f) => setInStockOnly(f === 'in_stock')}
+                sortOption="default"
+                onSelectSortOption={() => {}}
+                totalCount={products.length}
+                filteredCount={filteredProducts.length}
+                familyCounts={familyCounts}
+                onResetFilters={resetAllFilters}
+                lang={lang}
+                genderFilter={genderFilter}
+                onSelectGender={onSelectGender}
+                genderCounts={genderCounts}
+                brandOptions={brandOptions}
+                selectedBrands={selectedBrands}
+                onToggleBrand={onToggleBrand}
+                showOnlyClearance={showOnlyClearance}
+                onToggleOnlyClearance={onToggleOnlyClearance}
+                clearanceCount={clearanceCount}
+                styleCounts={styleCounts}
+                selectedStyles={selectedStyles}
+                onToggleStyle={onToggleStyle}
+              />
+            </aside>
+          )}
+          <div className="min-w-0 flex-1">
         {/* Filter Controls Bar */}
-        <div className="sticky top-[58px] z-20 bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 shadow-2xs border border-rose-100 mb-4 sm:mb-6 space-y-3 transition-all">
-          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div className="max-sm:contents bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 shadow-2xs border border-rose-100 mb-4 sm:mb-6 space-y-3 transition-all">
+          <div className="max-sm:contents flex flex-col sm:flex-row sm:flex-wrap gap-3 items-center sm:items-start">
             {/* Search Input */}
-            <div className="relative w-full sm:max-w-md">
+            <div className="relative w-full sm:max-w-md max-sm:mb-2">
               <Search className={`w-4 h-4 text-rose-400 absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2`} />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t.searchPlaceholder}
-                className={`w-full ${isRtl ? 'pr-9 pl-4' : 'pl-9 pr-4'} py-2 text-xs bg-rose-50/30 border border-rose-200/80 rounded-xl text-slate-900 focus:outline-hidden focus:border-[#9f0e4e] focus:ring-2 focus:ring-[#9f0e4e]/10 focus:bg-white transition`}
+                className={`w-full ${isRtl ? 'pr-9 pl-4' : 'pl-9 pr-4'} py-3 sm:py-2 text-base sm:text-xs bg-white sm:bg-rose-50/30 border border-rose-200/80 rounded-xl text-slate-900 focus:outline-hidden focus:border-[#9f0e4e] focus:ring-2 focus:ring-[#9f0e4e]/10 focus:bg-white transition`}
               />
               {search && (
                 <button
@@ -217,12 +336,30 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
               )}
             </div>
 
+            {onSelectGender && onToggleBrand && onToggleOnlyClearance && (
+              <div className="w-full sm:contents max-sm:mb-2 lg:hidden">
+                <BrandGenderFilters
+                  lang={lang}
+                  genderFilter={genderFilter}
+                  onSelectGender={onSelectGender}
+                  genderCounts={genderCounts}
+                  brandOptions={brandOptions}
+                  selectedBrands={selectedBrands}
+                  onToggleBrand={onToggleBrand}
+                  showOnlyClearance={showOnlyClearance}
+                  onToggleOnlyClearance={onToggleOnlyClearance}
+                  clearanceCount={clearanceCount}
+                  resultCount={filteredProducts.length}
+                />
+              </div>
+            )}
+
             {/* Family Tabs */}
-            <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+            <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 max-sm:py-2 max-sm:-mx-3 max-sm:px-3 max-sm:w-[calc(100%+1.5rem)] max-sm:border-b max-sm:border-rose-100 max-sm:mb-2">
               <button
                 type="button"
                 onClick={() => handleSelectFamily('all')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer whitespace-nowrap ${
+                className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl transition cursor-pointer whitespace-nowrap ${
                   activeFamily === 'all' && !favoritesOnly
                     ? 'bg-gradient-to-r from-[#70083b] to-[#9f0e4e] text-white shadow-xs'
                     : 'bg-rose-50/60 text-slate-700 hover:bg-rose-100/60 hover:text-[#9f0e4e]'
@@ -233,7 +370,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleSelectFamily('Extrait')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
+                className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                   activeFamily === 'Extrait' && !favoritesOnly
                     ? 'bg-gradient-to-r from-[#70083b] to-[#9f0e4e] text-white shadow-xs'
                     : 'bg-rose-50/60 text-slate-700 hover:bg-rose-100/60 hover:text-[#9f0e4e]'
@@ -245,7 +382,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleSelectFamily('Flacon')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
+                className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                   activeFamily === 'Flacon' && !favoritesOnly && !topSellersOnly
                     ? 'bg-gradient-to-r from-[#880e4f] to-[#be185d] text-white shadow-xs font-black'
                     : 'bg-rose-50/60 text-slate-700 hover:bg-rose-100/60 hover:text-[#9f0e4e]'
@@ -258,7 +395,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                 type="button"
                 id="quick-order-tab-accessoire"
                 onClick={() => handleSelectFamily('Accessoire')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
+                className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                   activeFamily === 'Accessoire' && !favoritesOnly && !topSellersOnly
                     ? 'bg-gradient-to-r from-[#70083b] to-[#9f0e4e] text-white shadow-xs font-black'
                     : 'bg-rose-50/60 text-slate-700 hover:bg-rose-100/60 hover:text-[#9f0e4e]'
@@ -272,7 +409,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
               <button
                 type="button"
                 onClick={() => setTopSellersOnly((v) => !v)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
+                className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                   topSellersOnly
                     ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black shadow-xs ring-2 ring-amber-400/40'
                     : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200'
@@ -289,7 +426,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setFavoritesOnly((v) => !v)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
+                  className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                     favoritesOnly
                       ? 'bg-rose-600 text-white shadow-xs'
                       : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'
@@ -304,7 +441,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
               <button
                 type="button"
                 onClick={() => setInStockOnly((v) => !v)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition cursor-pointer whitespace-nowrap ${
+                className={`px-3.5 py-3 sm:px-3 sm:py-1.5 text-xs font-semibold rounded-xl border transition cursor-pointer whitespace-nowrap ${
                   inStockOnly
                     ? 'bg-emerald-50 border-emerald-400 text-emerald-900 font-bold'
                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -315,8 +452,8 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100">
-            <span>
+          <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100 max-sm:border-0 max-sm:pb-2">
+            <span className="max-sm:hidden">
               <strong className="text-slate-800">{filteredProducts.length}</strong> {t.productsFound}
             </span>
             {!isPricesVisible && (
@@ -379,237 +516,144 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
           </div>
         ) : (
           <>
-            {/* MOBILE LAYOUT: Phone Screen Friendly Card List (Fixed Overflow) */}
-            <div className="md:hidden space-y-3">
-              {filteredProducts.map((product) => {
+            {/* PHONE LIST: no photos, one compact row per article with a live -/+ counter */}
+            <div className="md:hidden bg-white rounded-2xl border border-slate-200 overflow-hidden">
+              {(isDesktop ? [] : shownProducts).map((product) => {
                 const isExtrait = product.family === 'Extrait';
                 const localized = getProductLocalizedDetails(product, lang);
                 const cartQty = cartMap[product.id] || 0;
-                const availableStock = Math.max(0, product.stock - cartQty);
+                const step = isExtrait ? 100 : 1;
+                const unitLabel = isExtrait ? 'g' : 'pcs';
                 const isOutOfStock = product.stock <= 0;
-                const isAllInCart = availableStock <= 0 && product.stock > 0;
-                const currentQty = getRowQty(product);
-                const isItemInCart = cartQty > 0;
-
-                const hasDiscount = Boolean(product.discountPercent && product.discountPercent > 0);
-                const discountedPriceDA = calculateDiscountedPrice(product.priceDA, product.discountPercent);
+                const unitPrice = getUnitPrice(product, Math.max(1, cartQty), offers);
+                const nudge = isPricesVisible ? volumeNudge(product, cartQty, offers) : null;
+                const setQty = (n: number) => {
+                  const clamped = Math.max(0, Math.min(product.stock, n));
+                  if (cartQty === 0) {
+                    if (clamped > 0) onAddToCart(product, clamped);
+                  } else if (clamped === 0 && onDecreaseCartQuantity) {
+                    onDecreaseCartQuantity(product.id, cartQty);
+                  } else {
+                    onUpdateCartQuantity(product.id, clamped);
+                  }
+                };
 
                 return (
                   <div
                     key={product.id}
-                    className={`bg-white rounded-2xl border p-3.5 shadow-xs transition ${
-                      isItemInCart ? 'border-emerald-300 bg-emerald-50/15' : 'border-slate-200'
+                    className={`grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-3 py-2 border-b border-slate-100 last:border-b-0 ${
+                      cartQty > 0 ? 'bg-amber-50' : ''
                     }`}
                   >
-                    <div className="flex items-start gap-3">
-                      <img
-                        src={
-                          product.imageUrl && !product.imageUrl.includes('photo-1608571423902')
-                            ? product.imageUrl
-                            : isExtrait
-                            ? '/tulip-extrait-default.jpg'
-                            : (product.imageUrl || 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=200')
-                        }
-                        alt={localized.name}
-                        width={64}
-                        height={64}
-                        loading="lazy"
-                        decoding="async"
-                        className="w-16 h-16 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-200 cursor-zoom-in hover:scale-105 active:scale-95 transition-transform"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          const target = e.currentTarget as HTMLImageElement;
-                          target.onerror = null;
-                          target.src = isExtrait ? '/tulip-extrait-default.jpg' : 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=200';
-                        }}
+                    <div className="min-w-0">
+                      <button
+                        type="button"
                         onClick={() => onQuickView(product)}
-                      />
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1 mb-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-                              {product.code}
+                        className="block text-left w-full font-bold text-[13.5px] uppercase leading-tight text-slate-900 break-words cursor-pointer"
+                      >
+                        {localized.name}
+                      </button>
+                      <div className="font-mono text-xs text-slate-500 mt-0.5">
+                        {product.code}
+                        {isPricesVisible ? (
+                          <>
+                            {' · '}
+                            <span className={unitPrice < product.priceDA ? 'text-emerald-700 font-bold' : ''}>
+                              {formatDZD(unitPrice)}
+                              {isExtrait ? ' /g' : ''}
                             </span>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                isExtrait ? 'bg-amber-100 text-amber-900' : 'bg-indigo-100 text-indigo-900'
-                              }`}
-                            >
-                              {product.family}
-                            </span>
-                          </div>
-                          {onToggleFavorite && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onToggleFavorite(product.id);
-                              }}
-                              className={`p-1.5 rounded-full transition cursor-pointer ${
-                                favorites.includes(product.id)
-                                  ? 'text-rose-600 bg-rose-50'
-                                  : 'text-slate-300 hover:text-rose-500'
-                              }`}
-                              title={favorites.includes(product.id) ? t.removeFromFavorites : t.addToFavorites}
-                            >
-                              <Heart className={`w-4 h-4 ${favorites.includes(product.id) ? 'fill-current' : ''}`} />
-                            </button>
-                          )}
-                        </div>
-
-                        <h4
-                          className="font-bold text-slate-900 text-sm leading-tight hover:text-amber-700 cursor-pointer"
-                          onClick={() => onQuickView(product)}
-                        >
-                          {localized.name}
-                        </h4>
-
-                        {/* BIG SOLDE STICKER ON MOBILE */}
-                        {hasDiscount && (
-                          <div className="mt-1">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[11px] font-black shadow-xs tracking-wider uppercase">
-                              🔥 -{product.discountPercent}% {t.soldeBadge}
-                            </span>
-                          </div>
+                            {unitPrice < product.priceDA && (
+                              <span className="line-through text-slate-400 ml-1">{formatDZD(product.priceDA)}</span>
+                            )}
+                          </>
+                        ) : (
+                          <Lock className="w-3 h-3 inline ml-1.5 text-amber-600" />
                         )}
-
-                        {/* Top Seller Badge on Mobile */}
-                        {isProductTopSeller(product) && !hasDiscount && (
-                          <div className="mt-1">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-[10px] font-black shadow-xs">
-                              <Flame className="w-3 h-3 fill-slate-950 text-slate-950" />
-                              <span>{t.topSellerBadge}</span>
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100">
-                          {/* Price */}
-                          {isPricesVisible ? (
-                            <div className="flex items-baseline gap-1.5">
-                              <span className="font-black text-rose-600 text-sm">
-                                {formatDZD(discountedPriceDA)}
-                              </span>
-                              {hasDiscount && (
-                                <span className="text-[11px] text-slate-400 line-through">
-                                  {formatDZD(product.priceDA)}
-                                </span>
-                              )}
-                              <span className="text-[10px] text-slate-500 font-medium">
-                                /{isExtrait ? '1g' : 'u'}
-                              </span>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={onRequireLogin}
-                              className="text-[11px] font-bold text-amber-800 hover:text-amber-950 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 cursor-pointer shadow-3xs"
-                              title={t.loginBtn}
-                            >
-                              <Lock className="w-3 h-3 text-amber-600 shrink-0" />
-                              <span>{t.priceHiddenNotice}</span>
-                            </button>
-                          )}
-
-                          {/* Availability */}
-                          {isOutOfStock ? (
-                            <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
-                              {t.filterOutOfStock}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                              {t.filterInStock}
-                            </span>
-                          )}
-                        </div>
                       </div>
+                      {(() => {
+                        const lowAt = product.lowStockThreshold || product.minAlertStock || 5;
+                        const isLow = product.stock > 0 && product.stock <= lowAt;
+                        const hasSale = Boolean(product.discountPercent && product.discountPercent > 0);
+                        if (!product.unit && !hasSale && !isLow) return null;
+                        return (
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-[11px] text-slate-500">
+                            {product.unit && <span>{isExtrait ? '1g · 100g' : product.unit}</span>}
+                            {hasSale && (
+                              <span className="px-1.5 py-px rounded-full bg-rose-600 text-white font-black">
+                                -{product.discountPercent}%
+                              </span>
+                            )}
+                            {isLow && (
+                              <span className="text-rose-700 font-bold">
+                                {lang === 'ar'
+                                  ? `بقي ${product.stock}${isExtrait ? ' غ' : ''} فقط`
+                                  : lang === 'en'
+                                  ? `Only ${product.stock}${isExtrait ? ' g' : ''} left`
+                                  : `Plus que ${product.stock}${isExtrait ? ' g' : ''}`}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
 
-                    {/* Quantity & Action Controls for Mobile */}
-                    {!isOutOfStock && (
-                      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-2">
-                        {/* Stepper */}
-                        {!isAllInCart ? (
-                          <div className="flex items-center border border-slate-300 rounded-xl overflow-hidden bg-slate-50">
-                            <button
-                              type="button"
-                              onClick={() => setRowQty(product.id, Math.max(1, currentQty - (isExtrait ? 100 : 1)))}
-                              disabled={currentQty <= 1}
-                              className="px-2.5 py-1.5 text-slate-700 hover:bg-slate-200 disabled:opacity-30 cursor-pointer"
-                            >
-                              <Minus className="w-3.5 h-3.5" />
-                            </button>
-                            <input
-                              type="number"
-                              min={1}
-                              max={availableStock}
-                              value={inputValues[product.id] ?? currentQty}
-                              onChange={(e) => handleInputChange(product, e.target.value)}
-                              onBlur={() => handleInputBlur(product)}
-                              className="w-12 text-center font-bold text-xs bg-transparent text-slate-900 focus:outline-hidden"
-                            />
-                            <span className="text-[10px] font-bold text-slate-400 pr-1">
-                              {isExtrait ? 'g' : 'u'}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setRowQty(product.id, Math.min(availableStock, currentQty + (isExtrait ? 100 : 1)))}
-                              disabled={currentQty >= availableStock}
-                              className="px-2.5 py-1.5 text-slate-700 hover:bg-slate-200 disabled:opacity-30 cursor-pointer"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : null}
-
-                        {/* Action Button - Keeps ON state when in cart */}
-                        {isAllInCart ? (
-                          <div className="flex-1 text-center text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 py-2 rounded-xl">
-                            ✓ {cartQty} {isExtrait ? 'g' : 'u'} {t.inCart} (Max)
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleAddRow(product)}
-                            className={`flex-1 py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer ${
-                              isItemInCart
-                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                : 'bg-slate-900 hover:bg-slate-800 text-white'
-                            }`}
-                          >
-                            {isItemInCart ? (
-                              <>
-                                <Check className="w-3.5 h-3.5" />
-                                <span>
-                                  ✓ {t.addedToCart} ({cartQty}{isExtrait ? 'g' : ''})
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>{t.addToPreorder}</span>
-                              </>
-                            )}
-                          </button>
-                        )}
+                    {isOutOfStock ? (
+                      <span className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-xs font-bold">
+                        {t.outOfStock}
+                      </span>
+                    ) : (
+                      <div className="inline-flex items-center border border-slate-300 rounded-xl overflow-hidden bg-white">
+                        <button
+                          type="button"
+                          disabled={cartQty === 0}
+                          onClick={() => setQty(cartQty - step)}
+                          className="w-11 h-11 text-[#9f0e4e] text-xl font-medium disabled:text-slate-300 cursor-pointer"
+                          aria-label="Diminuer la quantité"
+                        >
+                          −
+                        </button>
+                        <div className="flex items-baseline justify-center w-[72px]">
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={product.stock}
+                            value={cartQty || ''}
+                            placeholder="0"
+                            onChange={(e) => {
+                              const n = parseInt(e.target.value, 10);
+                              setQty(isNaN(n) ? 0 : n);
+                            }}
+                            className="w-12 text-center text-base font-bold font-mono text-slate-900 bg-transparent focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            aria-label={`Quantité ${localized.name}`}
+                          />
+                          <span className="text-[11px] text-slate-500 font-mono">{cartQty ? unitLabel : ''}</span>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={cartQty >= product.stock}
+                          onClick={() => setQty(cartQty + step)}
+                          className="w-11 h-11 text-[#9f0e4e] text-xl font-medium disabled:text-slate-300 cursor-pointer"
+                          aria-label="Augmenter la quantité"
+                        >
+                          +
+                        </button>
                       </div>
                     )}
 
-                    {!isOutOfStock && isItemInCart && onDecreaseCartQuantity && (
-                      <div className="mt-2">
+                    {nudge && nudge.minQty - cartQty <= product.stock - cartQty && (
+                      <div className="col-span-2 flex items-center justify-between gap-2 text-xs text-emerald-800">
+                        <span className="leading-snug">
+                          {lang === 'ar' ? 'أضف' : 'Ajoutez'} <b><bdi dir="ltr">+{nudge.missing} {unitLabel}</bdi></b> :{' '}
+                          <bdi dir="ltr">{formatDZD(nudge.nextUnit)}{isExtrait ? '/g' : ''}</bdi> · {lang === 'ar' ? 'توفر' : 'économie'}{' '}
+                          <b><bdi dir="ltr">{formatDZD(nudge.savingDA)}</bdi></b>
+                        </span>
                         <button
                           type="button"
-                          onClick={() => onDecreaseCartQuantity(product.id, isExtrait ? 100 : 1)}
-                          className="w-full py-2 px-3 text-xs font-black rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 hover:text-rose-950 border border-rose-200 hover:border-rose-300 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                          title={isExtrait ? "Retirer 100g" : "Retirer 1 unité"}
+                          onClick={() => setQty(nudge.minQty)}
+                          className="shrink-0 h-9 px-3 rounded-lg border border-emerald-600 text-emerald-700 font-bold cursor-pointer"
                         >
-                          <Minus className="w-3 h-3 stroke-[3]" />
-                          <span>
-                            {lang === 'ar'
-                              ? (isExtrait ? 'إزالة 100غ' : 'إزالة قطعة')
-                              : (isExtrait ? 'Retirer 100g' : 'Retirer 1 unité')}
-                          </span>
+                          {lang === 'ar' ? `إلى ${nudge.minQty}` : `Passer à ${nudge.minQty}`}
                         </button>
                       </div>
                     )}
@@ -617,6 +661,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                 );
               })}
             </div>
+
 
             {/* DESKTOP TABLE: Full High-Density Grid */}
             <div className="hidden md:block bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
@@ -634,7 +679,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
-                    {filteredProducts.map((product) => {
+                    {(isDesktop ? shownProducts : []).map((product) => {
                       const isExtrait = product.family === 'Extrait';
                       const localized = getProductLocalizedDetails(product, lang);
                       const cartQty = cartMap[product.id] || 0;
@@ -644,8 +689,8 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                       const currentQty = getRowQty(product);
                       const isItemInCart = cartQty > 0;
 
-                      const hasDiscount = Boolean(product.discountPercent && product.discountPercent > 0);
-                      const discountedPriceDA = calculateDiscountedPrice(product.priceDA, product.discountPercent);
+                      const discountedPriceDA = getUnitPrice(product, Math.max(1, cartQty + currentQty), offers);
+                      const hasDiscount = discountedPriceDA < product.priceDA;
 
                       return (
                         <tr
@@ -952,8 +997,11 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
                 </table>
               </div>
             </div>
+            <div ref={sentinelRef} className="h-px" aria-hidden="true" />
           </>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );
