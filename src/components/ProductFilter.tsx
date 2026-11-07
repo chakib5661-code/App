@@ -41,6 +41,7 @@ interface ProductFilterProps {
   clearanceCount?: number;
   /** 'sidebar' renders the full filter panel inline (desktop left column); default is the top bar. */
   variant?: 'bar' | 'sidebar';
+  hideSort?: boolean;
   // Univers & style (Niche / Designer / Arabic)
   styleCounts?: { Niche: number; Designer: number; Arabic: number };
   selectedStyles?: string[];
@@ -83,6 +84,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
   onToggleOnlyClearance,
   clearanceCount = 0,
   variant = 'bar',
+  hideSort = false,
   styleCounts = { Niche: 0, Designer: 0, Arabic: 0 },
   selectedStyles = [],
   onToggleStyle,
@@ -357,14 +359,14 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
     activeChips.push({ key: 'clr', label: L('Soldes', 'Sale', 'تخفيضات'), onRemove: onToggleOnlyClearance });
 
   if (variant === 'sidebar') {
-    const heading = 'text-[11px] font-black uppercase tracking-wider text-[#9f0e4e] mb-3';
+    const heading = 'text-[11px] font-extrabold uppercase tracking-wider text-[#7a4f61] mb-3';
     const divider = <div className="h-px bg-rose-100/80" />;
     const countPill = (n: number, tone: 'rose' | 'slate' | 'red' = 'slate') =>
       `text-[11px] font-bold px-2 py-0.5 rounded-md ${
-        tone === 'rose' ? 'bg-rose-100 text-[#9f0e4e]' : tone === 'red' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'
+        tone === 'rose' ? 'bg-rose-100 text-[#70083b]' : tone === 'red' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'
       }`;
     const row = 'flex items-center gap-2.5 cursor-pointer text-sm text-slate-800 select-none';
-    const box = 'w-4 h-4 accent-[#9f0e4e] cursor-pointer shrink-0';
+    const box = 'w-4 h-4 accent-[#70083b] cursor-pointer shrink-0';
     const famRows = familyTabs.filter((f) => f.key !== 'all');
     const genderKeys = (['men', 'women', 'unisex'] as const).filter(() => hasGenderData);
 
@@ -375,7 +377,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
             {t.productsFound} : <strong className="text-slate-900">{filteredCount}</strong> / {totalCount}
           </span>
           {hasActiveFilters && (
-            <button type="button" onClick={onResetFilters} className="font-bold text-slate-700 hover:text-[#9f0e4e] cursor-pointer">
+            <button type="button" onClick={onResetFilters} className="font-bold text-slate-700 hover:text-[#70083b] cursor-pointer">
               {L('Effacer', 'Clear', 'مسح')}
             </button>
           )}
@@ -414,17 +416,17 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
             <section>
               <div className={heading}>{L('Univers et style', 'Universe and style', 'العالم والأسلوب')}</div>
               <div className="grid grid-cols-2 gap-2">
-                {styleOptions.map((o) => {
+                {styleOptions.map((o, i) => {
                   const on = selectedStyles.includes(o.key);
                   return (
                     <label
                       key={o.key}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold cursor-pointer transition ${
-                        on ? 'border-[#9f0e4e] bg-rose-50 text-[#9f0e4e]' : 'border-rose-100 bg-rose-50/40 text-slate-800 hover:border-rose-300'
+                      className={`${i === 2 ? 'col-span-2' : ''} flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold cursor-pointer transition ${
+                        on ? 'border-[#70083b] bg-rose-50 text-[#70083b]' : 'border-slate-200 bg-white text-slate-800 hover:border-rose-300'
                       }`}
                     >
-                      <input type="checkbox" className="w-4 h-4 accent-[#9f0e4e] shrink-0" checked={on} onChange={() => onToggleStyle?.(o.key)} />
-                      <span className="truncate">{o.label}</span>
+                      <input type="checkbox" className="w-4 h-4 accent-[#70083b] shrink-0" checked={on} onChange={() => onToggleStyle?.(o.key)} />
+                      <span className="leading-tight">{o.label}</span>
                     </label>
                   );
                 })}
@@ -445,12 +447,12 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
                     <label
                       key={g}
                       className={`flex items-center gap-1.5 px-2 py-2 rounded-lg border text-xs font-bold cursor-pointer transition ${
-                        on ? 'border-[#9f0e4e] bg-rose-50 text-[#9f0e4e]' : 'border-slate-200 text-slate-700 hover:border-rose-300'
+                        on ? 'border-[#70083b] bg-rose-50 text-[#70083b]' : 'border-slate-200 text-slate-700 hover:border-rose-300'
                       }`}
                     >
                       <input
                         type="checkbox"
-                        className="w-3.5 h-3.5 accent-[#9f0e4e] shrink-0"
+                        className="w-3.5 h-3.5 accent-[#70083b] shrink-0"
                         checked={on}
                         onChange={() => onSelectGender?.(on ? 'all' : g)}
                       />
@@ -468,7 +470,7 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
             {divider}
             <section>
               <div className="flex items-baseline justify-between mb-3">
-                <div className="text-[11px] font-black uppercase tracking-wider text-[#9f0e4e]">
+                <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#7a4f61]">
                   {L('Marques', 'Brands', 'العلامات')}
                 </div>
                 {selectedBrands.length > 0 && (
@@ -523,8 +525,9 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
           </label>
         </section>
 
-        {divider}
-
+        {!hideSort && (
+          <>
+            {divider}
         <section>
           <div className={heading}>{L('Trier par', 'Sort by', 'ترتيب حسب')}</div>
           <select
@@ -539,12 +542,14 @@ const ProductFilterComponent: React.FC<ProductFilterProps> = ({
             <option value="name_asc">Nom (A-Z)</option>
           </select>
         </section>
+          </>
+        )}
 
         <button
           type="button"
           onClick={onResetFilters}
           disabled={!hasActiveFilters}
-          className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 text-xs font-semibold text-slate-600 hover:border-[#9f0e4e] hover:text-[#9f0e4e] disabled:opacity-40 cursor-pointer"
+          className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 text-xs font-semibold text-slate-600 hover:border-[#70083b] hover:text-[#70083b] disabled:opacity-40 cursor-pointer"
         >
           ↻ {L('Réinitialiser les filtres', 'Reset filters', 'إعادة ضبط الفلاتر')}
         </button>

@@ -23,6 +23,7 @@ import { AppLanguage, translations } from '../translations';
 import { getProductLocalizedDetails } from '../data/productTranslations';
 import { isProductTopSeller, calculateDiscountedPrice, normalizeGender, type GenderKey } from '../utils/productUtils';
 import { BrandGenderFilters } from './BrandGenderFilters';
+import { ProductFilter } from './ProductFilter';
 
 interface QuickOrderViewProps {
   products: Product[];
@@ -52,6 +53,10 @@ interface QuickOrderViewProps {
   showOnlyClearance?: boolean;
   onToggleOnlyClearance?: () => void;
   clearanceCount?: number;
+  styleCounts?: { Niche: number; Designer: number; Arabic: number };
+  selectedStyles?: string[];
+  onToggleStyle?: (style: string) => void;
+  onResetFilters?: () => void;
 }
 
 export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
@@ -80,6 +85,10 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
   showOnlyClearance = false,
   onToggleOnlyClearance,
   clearanceCount = 0,
+  styleCounts = { Niche: 0, Designer: 0, Arabic: 0 },
+  selectedStyles = [],
+  onToggleStyle,
+  onResetFilters,
 }) => {
   const t = translations[lang];
   const isRtl = false; // Layout stays LTR for accessibility and right-handed reachability
@@ -107,7 +116,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       }
     }, 120);
     return () => clearTimeout(timeout);
-  }, [search, activeFamily, inStockOnly, favoritesOnly, topSellersOnly, genderFilter, selectedBrands, showOnlyClearance]);
+  }, [search, activeFamily, inStockOnly, favoritesOnly, topSellersOnly, genderFilter, selectedBrands, selectedStyles, showOnlyClearance]);
 
   const topSellersCount = useMemo(() => products.filter(isProductTopSeller).length, [products]);
   const handleSelectFamily = (fam: ProductFamily | 'all') => {
@@ -143,6 +152,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
         if (g !== genderFilter && !(g === 'unisex' && genderFilter !== 'unisex')) return false;
       }
       if (selectedBrands.length > 0 && !selectedBrands.includes((p.brand || '').trim())) return false;
+      if (selectedStyles.length > 0 && !selectedStyles.includes((p.style || '').trim())) return false;
       if (showOnlyClearance && !(p.clearance || (p.discountPercent || 0) > 0)) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
@@ -154,7 +164,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
       }
       return true;
     });
-  }, [products, activeFamily, inStockOnly, search, lang, favoritesOnly, favorites, topSellersOnly, genderFilter, selectedBrands, showOnlyClearance]);
+  }, [products, activeFamily, inStockOnly, search, lang, favoritesOnly, favorites, topSellersOnly, genderFilter, selectedBrands, selectedStyles, showOnlyClearance]);
 
   // Render one layout (phone cards or desktop table) and only a first slice of rows; more load as the user scrolls
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
@@ -243,11 +253,65 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
     }
   };
 
+  const familyCounts = useMemo(() => {
+    const c = { all: 0, Extrait: 0, Flacon: 0, Accessoire: 0 };
+    products.forEach((p) => {
+      if (p.isHidden) return;
+      c.all += 1;
+      c[p.family] += 1;
+    });
+    return c;
+  }, [products]);
+  const resetAllFilters = () => {
+    onResetFilters?.();
+    handleSelectFamily('all');
+    setInStockOnly(false);
+    setFavoritesOnly(false);
+    setTopSellersOnly(false);
+    setSearch('');
+  };
+  const hasSidebar = !!(onSelectGender && onToggleBrand && onToggleOnlyClearance);
+
   const totalCartCount = cart.reduce((sum, item) => sum + (item?.quantity || 0), 0);
 
   return (
     <div className="min-h-screen bg-[#faf7f9] py-4 sm:py-6 pb-28" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
+        <div className="lg:flex lg:items-start lg:gap-6">
+          {hasSidebar && (
+            <aside className="hidden lg:block w-72 shrink-0 sticky top-4 self-start max-h-[calc(100vh-2rem)] overflow-y-auto">
+              <ProductFilter
+                variant="sidebar"
+                hideSort
+                searchQuery={search}
+                onSearchChange={setSearch}
+                selectedFamily={activeFamily}
+                onSelectFamily={handleSelectFamily}
+                stockFilter={inStockOnly ? 'in_stock' : 'all'}
+                onSelectStockFilter={(f) => setInStockOnly(f === 'in_stock')}
+                sortOption="default"
+                onSelectSortOption={() => {}}
+                totalCount={products.length}
+                filteredCount={filteredProducts.length}
+                familyCounts={familyCounts}
+                onResetFilters={resetAllFilters}
+                lang={lang}
+                genderFilter={genderFilter}
+                onSelectGender={onSelectGender}
+                genderCounts={genderCounts}
+                brandOptions={brandOptions}
+                selectedBrands={selectedBrands}
+                onToggleBrand={onToggleBrand}
+                showOnlyClearance={showOnlyClearance}
+                onToggleOnlyClearance={onToggleOnlyClearance}
+                clearanceCount={clearanceCount}
+                styleCounts={styleCounts}
+                selectedStyles={selectedStyles}
+                onToggleStyle={onToggleStyle}
+              />
+            </aside>
+          )}
+          <div className="min-w-0 flex-1">
         {/* Filter Controls Bar */}
         <div className="max-sm:contents bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 shadow-2xs border border-rose-100 mb-4 sm:mb-6 space-y-3 transition-all">
           <div className="max-sm:contents flex flex-col sm:flex-row sm:flex-wrap gap-3 items-center sm:items-start">
@@ -273,7 +337,7 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
             </div>
 
             {onSelectGender && onToggleBrand && onToggleOnlyClearance && (
-              <div className="w-full sm:contents max-sm:mb-2">
+              <div className="w-full sm:contents max-sm:mb-2 lg:hidden">
                 <BrandGenderFilters
                   lang={lang}
                   genderFilter={genderFilter}
@@ -936,6 +1000,8 @@ export const QuickOrderView: React.FC<QuickOrderViewProps> = ({
             <div ref={sentinelRef} className="h-px" aria-hidden="true" />
           </>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );

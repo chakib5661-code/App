@@ -3079,6 +3079,12 @@ export default function App() {
           showOnlyClearance={showOnlyClearance}
           onToggleOnlyClearance={() => setShowOnlyClearance((v) => !v)}
           clearanceCount={clearanceCount}
+          styleCounts={styleCounts}
+          selectedStyles={styleFilter}
+          onToggleStyle={(st) =>
+            setStyleFilter((prev) => (prev.includes(st) ? prev.filter((x) => x !== st) : [...prev, st]))
+          }
+          onResetFilters={handleResetFilters}
         />
       ) : (
         <>
