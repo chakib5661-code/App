@@ -492,7 +492,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 ) : (
                   <span className="px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-800 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                    {isExtrait ? `${product.stock.toLocaleString('fr-FR')} g ${lang === 'en' ? 'in stock' : 'en stock'}` : t.filterInStock}
+                    {t.filterInStock}
                   </span>
                 )}
               </div>
