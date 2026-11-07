@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { X, UploadCloud, CheckCircle2, AlertCircle, Tags } from 'lucide-react';
-import { Product } from '../types';
+import { Product, OlfactiveSheet } from '../types';
 
 interface Props {
   isOpen: boolean;
@@ -16,6 +16,7 @@ interface TagRow {
   brand: string;
   gender: string;
   style: string;
+  olfactive: OlfactiveSheet | null;
 }
 
 const norm = (s: unknown) => String(s ?? '').trim();
@@ -34,6 +35,25 @@ const cleanStyle = (s: string) => {
     'own brand': 'Own brand', 'non-perfume': 'Non-perfume',
   };
   return map[v] || '';
+};
+const SUGGESTED = /\((suggested|likely)\)/i;
+const stripSug = (s: string) => s.replace(/\s*\((suggested|likely)\)/gi, '').trim();
+const buildOlfactive = (r: Record<string, unknown>): OlfactiveSheet | null => {
+  const season = pick(r, ['when to wear (season)', 'season', 'saison']);
+  const time = pick(r, ['when to wear (time)', 'time', 'moment']);
+  const o: OlfactiveSheet = {
+    season: stripSug(season) || undefined,
+    time: stripSug(time) || undefined,
+    top: pick(r, ['top notes', 'notes de tete']) || undefined,
+    middle: pick(r, ['middle notes', 'notes de coeur']) || undefined,
+    base: pick(r, ['base notes', 'notes de fond']) || undefined,
+    notes: pick(r, ['notes (no pyramid)', 'notes']) || undefined,
+    accords: pick(r, ['main accords', 'accords']) || undefined,
+    description: pick(r, ['description']) || undefined,
+    source: pick(r, ['data source', 'source']) || undefined,
+    suggested: SUGGESTED.test(season) || SUGGESTED.test(time) || undefined,
+  };
+  return Object.values(o).some((v) => v !== undefined) ? o : null;
 };
 // Column header aliases (case / accent insensitive)
 const pick = (row: Record<string, unknown>, names: string[]) => {
@@ -88,6 +108,7 @@ export const AdminTagsImportModal: React.FC<Props> = ({ isOpen, onClose, product
           brand: pick(r, ['brand', 'marque']),
           gender: pick(r, ['gender', 'genre', 'gender_clean']),
           style: pick(r, ['style']),
+          olfactive: buildOlfactive(r),
         }))
         .filter((r) => r.ref);
       if (!parsed.length) throw new Error('Aucune ligne avec une colonne "ref" trouvée.');
@@ -111,10 +132,11 @@ export const AdminTagsImportModal: React.FC<Props> = ({ isOpen, onClose, product
         brand: r.brand || p.brand,
         gender: cleanGender(r.gender) || p.gender,
         style: cleanStyle(r.style) || p.style,
+        olfactive: r.olfactive || p.olfactive,
       };
     });
     onUpdateProducts(next);
-    setDone(`${count} produit(s) mis à jour (marque, genre, style).`);
+    setDone(`${count} produit(s) mis à jour (marque, genre, style, fiche olfactive).`);
     setRows([]);
     setFileName('');
   };
@@ -130,7 +152,7 @@ export const AdminTagsImportModal: React.FC<Props> = ({ isOpen, onClose, product
             <div>
               <h3 className="text-sm sm:text-base font-bold text-white">Filtres Extraits • Marque / Genre / Style</h3>
               <p className="text-xs text-slate-400">
-                Excel avec les colonnes <code className="text-violet-300 font-mono">ref, name, brand, gender, style</code>
+                Excel avec les colonnes <code className="text-violet-300 font-mono">ref, name, brand, gender, style</code> (+ notes, accords, saison… facultatifs)
               </p>
             </div>
           </div>
@@ -194,7 +216,7 @@ export const AdminTagsImportModal: React.FC<Props> = ({ isOpen, onClose, product
               <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-800">
                 <table className="w-full text-left">
                   <thead className="bg-slate-950 text-slate-400 sticky top-0">
-                    <tr><th className="p-2">Ref</th><th className="p-2">Nom</th><th className="p-2">Marque</th><th className="p-2">Genre</th><th className="p-2">Style</th></tr>
+                    <tr><th className="p-2">Ref</th><th className="p-2">Nom</th><th className="p-2">Marque</th><th className="p-2">Genre</th><th className="p-2">Style</th><th className="p-2">Fiche</th></tr>
                   </thead>
                   <tbody>
                     {rows.slice(0, 100).map((r) => (
@@ -204,6 +226,7 @@ export const AdminTagsImportModal: React.FC<Props> = ({ isOpen, onClose, product
                         <td className="p-2">{r.brand}</td>
                         <td className="p-2">{r.gender}</td>
                         <td className="p-2">{r.style}</td>
+                        <td className="p-2">{r.olfactive ? '✓' : '—'}</td>
                       </tr>
                     ))}
                   </tbody>

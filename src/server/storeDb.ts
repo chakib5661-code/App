@@ -41,7 +41,7 @@ export interface ServerDatabase {
   pushPrefs?: Record<string, { marketing: boolean }>;
   pushLog?: PushLogEntry[];
   /** brand / gender / style per product code, kept across Excel imports */
-  productTags?: Record<string, { brand?: string; gender?: string; style?: string }>;
+  productTags?: Record<string, { brand?: string; gender?: string; style?: string; olfactive?: any }>;
   lastUpdated: string;
 }
 
@@ -1305,12 +1305,13 @@ export async function syncProducts(newProducts: Product[]): Promise<Product[]> {
   const tagKey = (c?: string) => String(c || '').toUpperCase().replace(/\s+/g, '');
   const tags = { ...(db.productTags || {}) };
   const remember = (p: Product) => {
-    if (!p.code || (!p.brand && !p.gender && !p.style)) return;
+    if (!p.code || (!p.brand && !p.gender && !p.style && !p.olfactive)) return;
     const k = tagKey(p.code);
     tags[k] = {
       brand: p.brand || tags[k]?.brand,
       gender: p.gender || tags[k]?.gender,
       style: p.style || tags[k]?.style,
+      olfactive: p.olfactive || tags[k]?.olfactive,
     };
   };
   db.products.forEach(remember);
@@ -1320,7 +1321,7 @@ export async function syncProducts(newProducts: Product[]): Promise<Product[]> {
     const old = previous.get(np.id) || previous.get(`code:${String(np.code || '').toUpperCase()}`);
     const t = tags[tagKey(np.code)];
     const withTags = t
-      ? { ...np, brand: np.brand || (t.brand as any), gender: np.gender || (t.gender as any), style: np.style || (t.style as any) }
+      ? { ...np, brand: np.brand || (t.brand as any), gender: np.gender || (t.gender as any), style: np.style || (t.style as any), olfactive: np.olfactive || t.olfactive }
       : np;
     if (!old) return withTags;
     return {

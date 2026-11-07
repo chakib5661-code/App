@@ -1,5 +1,19 @@
 export type ProductFamily = 'Extrait' | 'Flacon' | 'Accessoire';
 
+/** Olfactive sheet imported from the tags Excel. `suggested` = season/time/accords are inferred, not verified. */
+export interface OlfactiveSheet {
+  season?: string;
+  time?: string;
+  top?: string;
+  middle?: string;
+  base?: string;
+  notes?: string;
+  accords?: string;
+  description?: string;
+  source?: string;
+  suggested?: boolean;
+}
+
 export interface Product {
   id: string;
   code: string;
@@ -22,6 +36,7 @@ export interface Product {
   gender?: string;
   brand?: string; // Brand name, used by the brand filter
   style?: string; // Designer | Niche | Arabic | Own brand | Non-perfume (set by the tags import)
+  olfactive?: OlfactiveSheet; // Fiche olfactive (notes, accords, season...), set by the tags import
   capacityMl?: string | number;
   lowStockThreshold?: number;
   tierPrices?: VolumeTier[]; // Volume price breaks (qty in grams for Extrait, units otherwise)

@@ -1,9 +1,9 @@
-import { Product } from '../types';
+import { Product, OlfactiveSheet } from '../types';
 
 // Brand / gender / style tags are kept per product code so they survive every
 // Excel stock import (the POS file never contains them).
 const KEY = 'tulip_product_tags_v1';
-export type TagMap = Record<string, { brand?: string; gender?: string; style?: string }>;
+export type TagMap = Record<string, { brand?: string; gender?: string; style?: string; olfactive?: OlfactiveSheet }>;
 
 const norm = (c: string) => String(c || '').toUpperCase().replace(/\s+/g, '');
 
@@ -21,12 +21,13 @@ export function loadTags(): TagMap {
 export function rememberTags(products: Product[]): TagMap {
   const map = loadTags();
   products.forEach((p) => {
-    if (!p.code || (!p.brand && !p.gender && !p.style)) return;
+    if (!p.code || (!p.brand && !p.gender && !p.style && !p.olfactive)) return;
     const k = norm(p.code);
     map[k] = {
       brand: p.brand || map[k]?.brand,
       gender: p.gender || map[k]?.gender,
       style: p.style || map[k]?.style,
+      olfactive: p.olfactive || map[k]?.olfactive,
     };
   });
   try {
@@ -46,6 +47,7 @@ export function applyStoredTags(products: Product[]): Product[] {
       brand: p.brand || (t.brand as any),
       gender: p.gender || (t.gender as any),
       style: p.style || (t.style as any),
+      olfactive: p.olfactive || t.olfactive,
     };
   });
 }
