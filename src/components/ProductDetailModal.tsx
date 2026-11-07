@@ -276,6 +276,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   const gKey = normalizeGender(product.gender);
   const genderChip = gKey === 'men' ? 'Homme' : gKey === 'women' ? 'Femme' : gKey === 'unisex' ? 'Mixte' : '';
+  const styleLabel =
+    product.style === 'Arabic' ? (lang === 'en' ? 'Oriental / Arabic' : 'Oriental / Arabe')
+    : product.style === 'Niche' || product.style === 'Designer' ? product.style
+    : '';
   const olf = product.olfactive;
   const olfactiveCard = olf ? (
     <div className="bg-white border border-rose-100 rounded-2xl p-4 space-y-3">
@@ -485,6 +489,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     {localized.origin}
                   </span>
                 )}
+                {styleLabel && (
+                  <span className="px-3 py-1.5 rounded-full border border-rose-200 text-slate-700">
+                    {lang === 'en' ? 'Universe & style' : 'Univers et style'} : <strong>{styleLabel}</strong>
+                  </span>
+                )}
                 {isOutOfStock ? (
                   <span className="px-3 py-1.5 rounded-full bg-rose-100 text-rose-800 flex items-center gap-1">
                     <XCircle className="w-3.5 h-3.5" /> {t.filterOutOfStock}
@@ -689,15 +698,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       {lang === 'en' ? `Go to ${nudge.minQty}` : `Passer à ${nudge.minQty}`}
                     </button>
                   )}
-                </div>
-              )}
-
-              {localized.description && (
-                <div className="text-xs text-slate-600 leading-relaxed border-t border-rose-100 pt-3">
-                  <h4 className="font-bold text-slate-900 mb-1">
-                    {lang === 'ar' ? 'بطاقة المنتج الوصفية:' : lang === 'en' ? 'Product Description:' : 'Fiche Matière Première :'}
-                  </h4>
-                  <p>{localized.description}</p>
                 </div>
               )}
             </div>
