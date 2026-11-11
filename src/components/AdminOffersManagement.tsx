@@ -51,6 +51,57 @@ const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label
   </label>
 );
 
+const ProductPicker: React.FC<{ products: Product[]; value: string; onChange: (id: string) => void }> = ({ products, value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const current = products.find((p) => p.id === value);
+  const results = useMemo(() => {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const list = words.length
+      ? products.filter((p) => {
+          const hay = `${p.code} ${p.name} ${p.brand || ''}`.toLowerCase();
+          return words.every((w) => hay.includes(w));
+        })
+      : products;
+    return list.slice(0, 50);
+  }, [products, q]);
+  return (
+    <div className="relative flex-1 min-w-0">
+      <input
+        value={open ? q : current ? `${current.code} · ${current.name}` : ''}
+        onFocus={() => {
+          setQ('');
+          setOpen(true);
+        }}
+        onChange={(e) => setQ(e.target.value)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Rechercher un produit (code, nom, marque)…"
+        className={input}
+      />
+      {open && (
+        <div className="absolute z-30 left-0 right-0 mt-1 max-h-60 overflow-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl">
+          {results.length === 0 && <div className="px-3 py-2 text-xs text-slate-500">Aucun résultat</div>}
+          {results.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(p.id);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-800 cursor-pointer ${p.id === value ? 'text-amber-300' : 'text-slate-200'}`}
+            >
+              {p.code} · {p.name}
+              {p.brand ? <span className="text-slate-500"> — {p.brand}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Num: React.FC<{ value: number; onChange: (v: number) => void; min?: number; step?: number; className?: string }> = ({
   value,
   onChange,
@@ -635,17 +686,11 @@ const BundlesTab: React.FC<{ draft: OffersConfig; update: UpdateFn; products: Pr
           {bannerError && bannerBusy === null && <div className="text-[11px] text-rose-400">{bannerError}</div>}
           {b.items.map((bi, i) => (
             <div key={i} className="flex items-center gap-2">
-              <select
+              <ProductPicker
+                products={products}
                 value={bi.productId}
-                onChange={(e) => setBundle(b.id, { items: b.items.map((x, j) => (j === i ? { ...x, productId: e.target.value } : x)) })}
-                className={input}
-              >
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.code} · {p.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(id) => setBundle(b.id, { items: b.items.map((x, j) => (j === i ? { ...x, productId: id } : x)) })}
+              />
               <Num
                 value={bi.quantity}
                 min={1}
