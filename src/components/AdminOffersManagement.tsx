@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BadgePercent, Bell, BarChart3, Gift, Layers, Link2, Package, Save, Settings2, Trash2, Plus, RefreshCw } from 'lucide-react';
+import { BadgePercent, Bell, BarChart3, Gift, Layers, Link2, Package, Save, Settings2, Trash2, Plus, RefreshCw, ImagePlus, Loader2 } from 'lucide-react';
 import { Bundle, LoyaltyTier, OffersConfig, PreOrder, Product, ProductFamily, RewardTier, VolumeDefaultRule, VolumeTier } from '../types';
 import { effectiveTiers, normalizeOffers } from '../utils/offers';
 import {
@@ -9,6 +9,8 @@ import {
   saveOffersOnServer,
 } from '../utils/api';
 import { formatDZD } from '../utils/formatDZD';
+import { compressImage } from '../utils/imageCompressor';
+import { uploadMediaToServer } from '../utils/api';
 
 interface AdminOffersManagementProps {
   products: Product[];
@@ -535,6 +537,27 @@ const VolumeTab: React.FC<{ products: Product[]; onUpdateProduct?: (p: Product) 
 // ---------------------------------------------------------------- bundles
 
 const BundlesTab: React.FC<{ draft: OffersConfig; update: UpdateFn; products: Product[] }> = ({ draft, update, products }) => {
+  const [bannerBusy, setBannerBusy] = useState<string | null>(null);
+  const [bannerError, setBannerError] = useState<string | null>(null);
+  const uploadBanner = async (id: string, file?: File) => {
+    if (!file) return;
+    setBannerError(null);
+    if (!file.type.startsWith('image/')) {
+      setBannerError('Veuillez sélectionner une image (JPG, PNG, WebP).');
+      return;
+    }
+    try {
+      setBannerBusy(id);
+      const compressed = await compressImage(file, { maxWidth: 1200, maxHeight: 600, quality: 0.8, mimeType: 'image/webp' });
+      const res = await uploadMediaToServer(compressed, file.name);
+      if (res.success && res.url) setBundle(id, { imageUrl: res.url });
+      else setBannerError(res.error || res.message || "Échec de l'envoi de l'image.");
+    } catch {
+      setBannerError("Erreur lors de l'optimisation de l'image.");
+    } finally {
+      setBannerBusy(null);
+    }
+  };
   const setBundle = (id: string, patch: Partial<Bundle>) =>
     update((d) => ({ ...d, bundles: { ...d.bundles, items: d.bundles.items.map((b) => (b.id === id ? { ...b, ...patch } : b)) } }));
 
@@ -581,6 +604,35 @@ const BundlesTab: React.FC<{ draft: OffersConfig; update: UpdateFn; products: Pr
             <input value={b.description || ''} onChange={(e) => setBundle(b.id, { description: e.target.value })} className={input} placeholder="Description courte affichée dans l'en-tête des packs" />
             <input value={b.badgeText || ''} onChange={(e) => setBundle(b.id, { badgeText: e.target.value })} className={input} placeholder="Étiquette (ex : Meilleur choix)" />
           </div>
+          <div className="flex items-center gap-3">
+            {b.imageUrl ? (
+              <img src={b.imageUrl} alt="" className="h-16 w-32 rounded-lg object-cover border border-slate-700" />
+            ) : (
+              <div className="h-16 w-32 rounded-lg border border-dashed border-slate-700 flex items-center justify-center text-[10px] text-slate-500">Pas de bannière</div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <label className={`${btn} bg-slate-800 hover:bg-slate-700 text-white flex items-center gap-1 cursor-pointer`}>
+                {bannerBusy === b.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
+                {b.imageUrl ? "Remplacer l'image" : 'Ajouter une bannière'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={bannerBusy === b.id}
+                  onChange={(e) => {
+                    uploadBanner(b.id, e.target.files?.[0]);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {b.imageUrl && (
+                <button type="button" onClick={() => setBundle(b.id, { imageUrl: undefined })} className={`${btn} bg-slate-800 hover:bg-rose-900 text-rose-300 flex items-center gap-1`}>
+                  <Trash2 className="w-3.5 h-3.5" /> Supprimer l'image
+                </button>
+              )}
+            </div>
+          </div>
+          {bannerError && bannerBusy === null && <div className="text-[11px] text-rose-400">{bannerError}</div>}
           {b.items.map((bi, i) => (
             <div key={i} className="flex items-center gap-2">
               <select

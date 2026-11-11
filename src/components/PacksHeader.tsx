@@ -65,6 +65,9 @@ export const PacksHeader: React.FC<PacksHeaderProps> = ({ offers, products, cart
                 className="snap-start shrink-0 w-[250px] sm:w-[300px] bg-white/[0.07] backdrop-blur-sm border border-white/15 rounded-2xl p-4 flex flex-col justify-between text-white"
               >
                 <div>
+                  {bundle.imageUrl && (
+                    <img src={bundle.imageUrl} alt={bundle.name} loading="lazy" className="-mx-4 -mt-4 mb-3 w-[calc(100%+2rem)] h-28 object-cover rounded-t-2xl" />
+                  )}
                   <div className="flex items-start justify-between gap-2">
                     <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
                       <Package className="w-5 h-5 text-amber-200" />

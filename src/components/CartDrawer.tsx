@@ -451,7 +451,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         {tr('عروض الباقات', 'Packs avantageux')}
                       </div>
                       {openBundles.slice(0, 3).map((b) => (
-                        <div key={b.id} className="flex items-center justify-between gap-2 text-xs">
+                        <div key={b.id} className="space-y-1.5">
+                        {b.imageUrl && <img src={b.imageUrl} alt={b.name} loading="lazy" className="w-full h-20 object-cover rounded-lg" />}
+                        <div className="flex items-center justify-between gap-2 text-xs">
                           <div className="min-w-0">
                             <span className="font-bold text-slate-900 block truncate">{b.name}</span>
                             <span className="text-[10px] text-amber-800">-{b.discountPercent}%</span>
@@ -469,6 +471,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           >
                             {tr('أضف الباقة', 'Ajouter le pack')}
                           </button>
+                        </div>
                         </div>
                       ))}
                     </div>
