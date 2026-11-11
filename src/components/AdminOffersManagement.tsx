@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BadgePercent, Bell, BarChart3, Gift, Layers, Link2, Package, Save, Settings2, Trash2, Plus, RefreshCw } from 'lucide-react';
+import { BadgePercent, Bell, BarChart3, Gift, Layers, Link2, Package, Save, Settings2, Trash2, Plus, RefreshCw, ImagePlus, Loader2 } from 'lucide-react';
 import { Bundle, LoyaltyTier, OffersConfig, PreOrder, Product, ProductFamily, RewardTier, VolumeDefaultRule, VolumeTier } from '../types';
 import { effectiveTiers, normalizeOffers } from '../utils/offers';
 import {
@@ -9,6 +9,8 @@ import {
   saveOffersOnServer,
 } from '../utils/api';
 import { formatDZD } from '../utils/formatDZD';
+import { compressImage } from '../utils/imageCompressor';
+import { uploadMediaToServer } from '../utils/api';
 
 interface AdminOffersManagementProps {
   products: Product[];
@@ -48,6 +50,57 @@ const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label
     </span>
   </label>
 );
+
+const ProductPicker: React.FC<{ products: Product[]; value: string; onChange: (id: string) => void }> = ({ products, value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const current = products.find((p) => p.id === value);
+  const results = useMemo(() => {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const list = words.length
+      ? products.filter((p) => {
+          const hay = `${p.code} ${p.name} ${p.brand || ''}`.toLowerCase();
+          return words.every((w) => hay.includes(w));
+        })
+      : products;
+    return list.slice(0, 50);
+  }, [products, q]);
+  return (
+    <div className="relative flex-1 min-w-0">
+      <input
+        value={open ? q : current ? `${current.code} · ${current.name}` : ''}
+        onFocus={() => {
+          setQ('');
+          setOpen(true);
+        }}
+        onChange={(e) => setQ(e.target.value)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Rechercher un produit (code, nom, marque)…"
+        className={input}
+      />
+      {open && (
+        <div className="absolute z-30 left-0 right-0 mt-1 max-h-60 overflow-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl">
+          {results.length === 0 && <div className="px-3 py-2 text-xs text-slate-500">Aucun résultat</div>}
+          {results.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(p.id);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-800 cursor-pointer ${p.id === value ? 'text-amber-300' : 'text-slate-200'}`}
+            >
+              {p.code} · {p.name}
+              {p.brand ? <span className="text-slate-500"> — {p.brand}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Num: React.FC<{ value: number; onChange: (v: number) => void; min?: number; step?: number; className?: string }> = ({
   value,
@@ -535,6 +588,27 @@ const VolumeTab: React.FC<{ products: Product[]; onUpdateProduct?: (p: Product) 
 // ---------------------------------------------------------------- bundles
 
 const BundlesTab: React.FC<{ draft: OffersConfig; update: UpdateFn; products: Product[] }> = ({ draft, update, products }) => {
+  const [bannerBusy, setBannerBusy] = useState<string | null>(null);
+  const [bannerError, setBannerError] = useState<string | null>(null);
+  const uploadBanner = async (id: string, file?: File) => {
+    if (!file) return;
+    setBannerError(null);
+    if (!file.type.startsWith('image/')) {
+      setBannerError('Veuillez sélectionner une image (JPG, PNG, WebP).');
+      return;
+    }
+    try {
+      setBannerBusy(id);
+      const compressed = await compressImage(file, { maxWidth: 1200, maxHeight: 600, quality: 0.8, mimeType: 'image/webp' });
+      const res = await uploadMediaToServer(compressed, file.name);
+      if (res.success && res.url) setBundle(id, { imageUrl: res.url });
+      else setBannerError(res.error || res.message || "Échec de l'envoi de l'image.");
+    } catch {
+      setBannerError("Erreur lors de l'optimisation de l'image.");
+    } finally {
+      setBannerBusy(null);
+    }
+  };
   const setBundle = (id: string, patch: Partial<Bundle>) =>
     update((d) => ({ ...d, bundles: { ...d.bundles, items: d.bundles.items.map((b) => (b.id === id ? { ...b, ...patch } : b)) } }));
 
@@ -581,19 +655,42 @@ const BundlesTab: React.FC<{ draft: OffersConfig; update: UpdateFn; products: Pr
             <input value={b.description || ''} onChange={(e) => setBundle(b.id, { description: e.target.value })} className={input} placeholder="Description courte affichée dans l'en-tête des packs" />
             <input value={b.badgeText || ''} onChange={(e) => setBundle(b.id, { badgeText: e.target.value })} className={input} placeholder="Étiquette (ex : Meilleur choix)" />
           </div>
+          <div className="flex items-center gap-3">
+            {b.imageUrl ? (
+              <img src={b.imageUrl} alt="" className="h-16 w-32 rounded-lg object-cover border border-slate-700" />
+            ) : (
+              <div className="h-16 w-32 rounded-lg border border-dashed border-slate-700 flex items-center justify-center text-[10px] text-slate-500">Pas de bannière</div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <label className={`${btn} bg-slate-800 hover:bg-slate-700 text-white flex items-center gap-1 cursor-pointer`}>
+                {bannerBusy === b.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
+                {b.imageUrl ? "Remplacer l'image" : 'Ajouter une bannière'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={bannerBusy === b.id}
+                  onChange={(e) => {
+                    uploadBanner(b.id, e.target.files?.[0]);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {b.imageUrl && (
+                <button type="button" onClick={() => setBundle(b.id, { imageUrl: undefined })} className={`${btn} bg-slate-800 hover:bg-rose-900 text-rose-300 flex items-center gap-1`}>
+                  <Trash2 className="w-3.5 h-3.5" /> Supprimer l'image
+                </button>
+              )}
+            </div>
+          </div>
+          {bannerError && bannerBusy === null && <div className="text-[11px] text-rose-400">{bannerError}</div>}
           {b.items.map((bi, i) => (
             <div key={i} className="flex items-center gap-2">
-              <select
+              <ProductPicker
+                products={products}
                 value={bi.productId}
-                onChange={(e) => setBundle(b.id, { items: b.items.map((x, j) => (j === i ? { ...x, productId: e.target.value } : x)) })}
-                className={input}
-              >
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.code} · {p.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(id) => setBundle(b.id, { items: b.items.map((x, j) => (j === i ? { ...x, productId: id } : x)) })}
+              />
               <Num
                 value={bi.quantity}
                 min={1}

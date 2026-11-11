@@ -285,6 +285,8 @@ export interface Bundle {
   name: string;
   description?: string;
   badgeText?: string;
+  /** Advertising banner shown to customers with the pack. */
+  imageUrl?: string;
   items: BundleItem[];
   discountPercent: number;
   isActive: boolean;
